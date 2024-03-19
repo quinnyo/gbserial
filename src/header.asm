@@ -18,5 +18,42 @@ section "Header", rom0[$100]
 section "Entry point", rom0
 
 EntryPoint:
-	jr @
+	call lcd_off
 
+	; Palettes!
+	ld a, %11100100
+	ld hl, rBGP
+	ld [hl+], a
+	ld [hl+], a
+	cpl
+	ld [hl+], a
+
+	; Use $9000 CHR data block for BG
+	ld hl, rLCDC
+	res LCDCB_BG8000, [hl]
+
+	call input_init
+	call vblank_init
+	ei
+
+	jr @
+	; jp main
+
+
+lcd_off::
+:
+	ldh a, [rLY]
+	cp 144
+	jr c, :-
+	ldh a, [rLCDC]
+	res LCDCB_ON, a
+	ldh [rLCDC], a
+	ret
+
+
+lcd_on::
+	ldh a, [hLCDC]
+	set LCDCB_ON, a
+	ldh [hLCDC], a
+	ldh [rLCDC], a
+	ret
