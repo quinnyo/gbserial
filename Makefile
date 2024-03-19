@@ -82,3 +82,7 @@ ifeq ($(filter clean,${MAKECMDGOALS}),)
 include $(patsubst src/%.asm,obj/%.mk,${SRCS})
 endif
 
+
+assets/%.chr: assets/%.png
+	@${MKDIR_P} "${@D}"
+	${RGBGFX} -o $@ $<
