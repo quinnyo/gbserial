@@ -21,23 +21,21 @@ EntryPoint:
 	call lcd_off
 
 	; Palettes!
-	ld a, %11100100
+	ld a, %11_10_01_00
 	ld hl, rBGP
 	ld [hl+], a
+	ld a, %10_01_00_11
 	ld [hl+], a
-	cpl
+	ld a, %11_00_01_11
 	ld [hl+], a
-
-	; Use $9000 CHR data block for BG
-	ld hl, rLCDC
-	res LCDCB_BG8000, [hl]
 
 	call input_init
 	call vblank_init
+	ld a, LCDCF_OBJON | LCDCF_BGON
+	ld [hLCDC], a
 	ei
 
-	jr @
-	; jp main
+	jp main
 
 
 lcd_off::
