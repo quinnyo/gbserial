@@ -4,7 +4,11 @@ include "hw.inc"
 
 section "Header", rom0[$100]
 	di
+if def(TESTS)
+	jp Tests_EntryPoint
+else
 	jp EntryPoint
+endc
 
 	; Make sure to allocate some space for the header, so no important
 	; code gets put there and later overwritten by RGBFIX.

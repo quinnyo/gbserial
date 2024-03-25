@@ -3,10 +3,6 @@ include "hw.inc"
 include "serial.inc"
 
 
-def SERIOCTL_READY equ $81
-def SERIOCTL_RX_ACK equ $88
-
-
 section "irq/serial", rom0[$58]
 
 irq_serial:
@@ -25,6 +21,10 @@ _serio_tx:: db
 _serio_rx:: db
 ; Serial link status/flags
 _serio_status:: db
+; Externally clocked transfer timeout duration
+hSerialTransferTimeout:: db
+; timeout ticks remaining
+hTimeoutTicks:: db
 
 
 section "serio", rom0
@@ -35,19 +35,40 @@ serio_init::
 	ld l, h ; $FF0F --> $FFFF
 	set IEB_SERIAL, [hl]
 
-	ld a, SERIOCTL_READY
-	ld [_serio_tx], a
-	ld a, $FF
-	ld [_serio_rx], a
-	ld a, SERIOF_IDLE
-	ld [_serio_status], a
+	ld a, $AA
+	ldh [_serio_tx], a
+	ld a, $99
+	ldh [_serio_rx], a
+	ld a, SERIO_IDLE
+	ldh [_serio_status], a
+	xor a
+	ldh [hSerialTransferTimeout], a
+	ldh [hTimeoutTicks], a
 	ret
 
 
-; Start a transfer (as the clock source) to send the value in `[_serio_tx]`.
-serio_tx::
-	ld a, SERIOF_TX | SERIOF_WORKING | SERIOF_SYNC
+serio_tick::
+	ldh a, [_serio_status]
+	cp SERIO_WORKING
+	ret nz
+	ldh a, [hTimeoutTicks]
+	and a
+	ret z ; timeout not enabled
+	dec a
+	ldh [hTimeoutTicks], a
+	ret nz
+	; timed out
+	ld a, SERIO_TIMEOUT
+	jr serio_stop
+
+
+; Start transfer as host (internal clock).
+serio_host_start::
+	ld a, SERIO_WORKING
 	ldh [_serio_status], a
+	; no timeout for clock source
+	xor a
+	ldh [hTimeoutTicks], a
 	; Set internal clock source, without starting the transfer.
 	ld a, $01
 	ldh [rSC], a
@@ -59,17 +80,28 @@ serio_tx::
 	ret
 
 
-; Enter receive mode -- await transfer from other device.
-serio_rx::
-	ld a, SERIOF_WORKING | SERIOF_SYNC
+; Start transfer as guest (external clock).
+serio_guest_start::
+	ld a, SERIO_WORKING
 	ldh [_serio_status], a
+	; Use timeout when using external clock source
+	ldh a, [hSerialTransferTimeout]
+	ldh [hTimeoutTicks], a
 	xor a
 	ldh [rSC], a
-	; respond with ACK code so remote knows we were actively receiving...
-	ld a, SERIOCTL_RX_ACK
+	ldh a, [_serio_tx]
 	ldh [rSB], a
 	ld a, $80
 	ldh [rSC], a
+	ret
+
+
+; @param A: new status code
+serio_stop::
+	ldh [_serio_status], a
+	xor a
+	ldh [rSC], a
+	ldh [hTimeoutTicks], a
 	ret
 
 
@@ -77,25 +109,12 @@ serio_rx::
 _serio_complete_transfer:
 	; check that we were expecting a transfer
 	ldh a, [_serio_status]
-	bit SERIOB_WORKING, a
-	ret z ; @TODO: should this be an error condition?
-
-	ld b, a ; keep status in B and write it once at the end
-	res SERIOB_WORKING, b
+	cp SERIO_WORKING
+	ret nz ; @TODO: should this be an error condition?
 
 	; store the received value
 	ldh a, [rSB]
 	ldh [_serio_rx], a
 
-	; were we the sender?
-	bit SERIOB_TXRX, b
-	jr z, .ok ; receiver, nothing else to do
-	ldh a, [_serio_rx]
-	cp SERIOCTL_RX_ACK
-	jr z, .ok
-	; incorrect response, set ERROR flag
-	set SERIOB_ERROR, b
-.ok
-	ld a, b
-	ldh [_serio_status], a
-	ret
+	ld a, SERIO_DONE
+	jr serio_stop

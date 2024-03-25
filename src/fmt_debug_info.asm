@@ -21,52 +21,52 @@ endm
 
 
 section "fmt_debug_info_data", rom0
-strSerio: StrDB "ser"
-strError: StrDB "err"
-strOk:    StrDB " ok"
+strIdle: StrDB "idle"
+strWorking: StrDB "work"
+strDone: StrDB "done"
+strTimeout: StrDB "T-O!"
+strUnknown: StrDB "??"
+
 
 section "fmt_debug_info", rom0
-; @param B: value
+; @param A: value
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
 fmt_serio_status::
 	ld c, $FF ; str terminator
-	ld de, strSerio
-	call memcpy_terminated
+	ld de, strIdle
+	cp SERIO_IDLE
+	jp z, memcpy_terminated
 
-	; LoadBitSwitch a, SERIOB_TXRX, b, "R", "T"
-	; ld [hl+], a
-	; ld a, "x"
-	; ld [hl+], a
-	ld a, " "
-	ld [hl+], a
-	LoadBitSwitch a, SERIOB_WORKING, b, ".", "W"
-	ld [hl+], a
-	LoadBitSwitch a, SERIOB_SYNC, b, "-", "S"
-	ld [hl+], a
-	LoadBitSwitch de, SERIOB_ERROR, b, strOk, strError
-	ld c, $FF ; str terminator
-	call memcpy_terminated
-	ld a, " "
-	ld [hl+], a
+	ld de, strWorking
+	cp SERIO_WORKING
+	jp z, memcpy_terminated
 
-	LoadBitSwitch c, SERIOB_TXRX, b, "<", ">"
+	ld de, strDone
+	cp SERIO_DONE
+	jp z, memcpy_terminated
 
-	ld a, "r"
-	ld [hl+], a
-	ldh a, [_serio_rx]
-	ld b, a
+	ld de, strTimeout
+	cp SERIO_TIMEOUT
+	jp z, memcpy_terminated
+
 	call utile_print_h8
+	ld de, strUnknown
+	jp memcpy_terminated
 
-	ld a, c
-	ld [hl+], a
 
+; @param B: Tx value
+; @param C: Rx value
+fmt_txrx::
 	ld a, "t"
 	ld [hl+], a
-	ldh a, [_serio_tx]
-	ld b, a
 	call utile_print_h8
-	ret
+	ld a, " "
+	ld [hl+], a
+	ld a, "r"
+	ld [hl+], a
+	ld b, c
+	jp utile_print_h8
 
 
 ; @param B: value
@@ -97,7 +97,7 @@ fmt_SC::
 	ld [hl+], a
 	LoadBitSwitch a, 7, b, "0", "1"
 	ld [hl+], a
-	ld a, "/"
+	ld a, ","
 	ld [hl+], a
 	LoadBitSwitch a, 0, b, "0", "C"
 	ld [hl+], a

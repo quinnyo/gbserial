@@ -10,21 +10,11 @@ def STATLN_BG_CHR equ " "
 def STATLN_LINE_LEN equ 20
 def STATLN_LINE_COUNT equ 2
 
-
 def COLLITEM_SIZE equ 2
 def COLLECTION_MAX_COUNT equ 8
 def COLLDISP_DEST equ BGMAP + (STATLN_LINE_COUNT + 1) * 32
 def COLLDISP_ITEM_WIDTH equ 4
-def COLLDISP_COLUMNS equ 4
-def COLLDISP_ROWS equ COLLECTION_MAX_COUNT / COLLDISP_COLUMNS
-
-def COLL_EMPTY equ "."
-def COLL_RX equ "r"
-def COLL_TX equ "t"
-def COLL_ERR_OFFSET equ $20
-def COLL_RXERR equ "R" ; RX = RXERR + $20
-def COLL_TXERR equ "T" ; TX = TXERR + $20
-
+def COLLDISP_COLUMNS equ 2
 
 
 section "wMain", wram0
@@ -81,23 +71,20 @@ main::
 	ld hl, _tick
 	inc [hl]
 
-	; press A: TX
+	; press A: start as host
 	ldh a, [hKeysPressed]
 	bit PADB_A, a
-	call nz, do_tx
+	call nz, do_host_transfer
 
-	; press B: RX
+	; press B: start as guest
 	ldh a, [hKeysPressed]
 	bit PADB_B, a
-	call nz, do_rx
+	call nz, do_guest_transfer
 
+	call do_timeout_adjust
 
-	; simplest(?) sync method -- just check if successful transfer every frame
 	call _serio_sync_poll
-	; ; serio sync - only wait until the first interrupt
-	; ld c, 4 ; max periods
-	; call _serio_sync_limitcount
-	; call _serio_sync_forced
+	; call _serio_sync_wait
 
 	; drawing status waits for vsync so put it after everything else.
 	call redraw
@@ -116,62 +103,88 @@ main::
 	jr .main_iter
 
 
+do_host_transfer:
+	ldh a, [_serio_status]
+	cp SERIO_IDLE
+	ret nz
+	ld a, [_tick]
+	and $7F
+	ldh [_serio_tx], a
+	ld d, a
+	ld e, "T"
+	call log_event
+	jp serio_host_start
+
+
+do_guest_transfer:
+	ldh a, [_serio_status]
+	cp SERIO_IDLE
+	ret nz
+	ld a, [_tick]
+	and $7F
+	ldh [_serio_tx], a
+	ld d, a
+	ld e, "t"
+	call log_event
+	jp serio_guest_start
+
+
+do_timeout_adjust:
+	ldh a, [hKeysPressed]
+	ld b, a
+	ldh a, [hSerialTransferTimeout]
+	cp 240
+	jr nc, :+
+	bit PADB_UP, b
+	jr z, :+
+	add 8
+:
+	bit PADB_DOWN, b
+	jr z, :+
+	sub 8
+	jr nc, :+
+	xor a
+:
+	ldh [hSerialTransferTimeout], a
+	ret
+
+
+; Check if transfer is complete.
 ; @mut: AF, DE, HL
 _serio_sync_poll:
-	ld hl, _serio_status
-	bit SERIOB_SYNC, [hl]
-	ret z ; nothing to wait for
-	bit SERIOB_WORKING, [hl]
-	ret nz ; still working
-	res SERIOB_SYNC, [hl]
-	call _collect_rx
-	ret
-
-
-; If there is a transfer pending, wait until it is complete, or until a timer expires.
-; @param C: maximum number of `HALT`s
-; @mut: AF, DE, C, HL
-_serio_sync_limitcount:
-; @TODO: use the timer interrupt to break out of halt
-	ld hl, _serio_status
-	bit SERIOB_SYNC, [hl]
-	ret z
-	jr .serio_sync
-.serio_sync_halt:
-	halt
-	nop
-	; @TODO: determine which interrupt broke HALT
-.serio_sync:
-	bit SERIOB_WORKING, [hl]
-	jr z, .work_complete
-	; simple counter timeout
-	dec c
-	jr nz, .serio_sync_halt
-.work_complete
-	call _collect_rx
-.done
-	res SERIOB_SYNC, [hl]
-	ret
+	ldh a, [_serio_status]
+	cp SERIO_WORKING
+	jp z, serio_tick ; still working, update timeout
+	jr _process_transfer_result
 
 
 ; If there is a transfer pending, wait until it is complete.
-_serio_sync_forced:
-; IF TRANSFER PENDING, WAIT UNTIL TRANSFER IS COMPLETE -- LOCKSTEP.
-; YOU COULD USE THIS TO SYNC MAIN LOOP INSTEAD OF SYNCING TO VBLANK?
-	ld hl, _serio_status
-	bit SERIOB_SYNC, [hl]
-	ret z
+_serio_sync_wait:
 	jr .serio_sync
 .serio_sync_halt:
+	call serio_tick
 	halt
 	nop
+	call redraw
 .serio_sync:
-	bit SERIOB_WORKING, [hl]
-	jr nz, .serio_sync_halt
-	res SERIOB_SYNC, [hl]
+	ldh a, [_serio_status]
+	cp SERIO_WORKING
+	jr z, .serio_sync_halt
+	jr _process_transfer_result
 
-	call _collect_rx
-	ret
+
+; @param A: status
+; @mut: AF, DE, HL
+_process_transfer_result:
+	cp SERIO_DONE
+	ret c
+
+	ld e, a
+	ldh a, [_serio_rx]
+	ld d, a
+	ld a, SERIO_IDLE
+	ldh [_serio_status], a
+	jr log_event
 
 
 ; @return A:
@@ -184,67 +197,38 @@ _get_collection_count:
 	ret
 
 
-; grab received value and "collect" it
-; @mut: AF, B, DE
-_collect_rx:
+; @param E: event code
+; @param D: event value
+; @mut: AF, HL
+log_event:
 	call _get_collection_count
 	assert COLLITEM_SIZE == 2
 	inc a
 	ld [_collection_count], a
 	dec a
 	add a ; mul 2
-	ld de, _collection
-	add e
-	ld e, a
-	adc d
-	sub e
-	ld d, a
+	ld hl, _collection
+	add l
+	ld l, a
+	adc h
+	sub l
+	ld h, a
 
-	ldh a, [_serio_status]
-	bit SERIOB_TXRX, a
-	jr z, :+
-	ld b, COLL_TX
-	ldh a, [_serio_tx]
-	jr .write
-:
-	ld b, COLL_RX
-	ldh a, [_serio_rx]
-.write
-	ld [de], a
-	inc de
-
-	ldh a, [_serio_status]
-	bit SERIOB_ERROR, a
-	jr z, :+
-	ld a, b
-	sub COLL_ERR_OFFSET
-	ld b, a
-:
-	ld a, b
-	ld [de], a
-	inc de
-	ret
-
-
-do_tx:
-	ld a, [_tick]
-	and $7F
-	ldh [_serio_tx], a
-	call serio_tx
-	ret
-
-
-do_rx:
-	call serio_rx
+	ld a, d
+	ld [hl+], a
+	ld a, e
+	ld [hl+], a
 	ret
 
 
 redraw:
-	call draw_statln
+	ld hl, _statln
+	call draw_statln_serio
+	ld hl, _statln + STATLN_LINE_LEN
+	call draw_statln_sc_sb
+	ld hl, _collection_display_buffer
 	call draw_collection
-
-	call flush_display
-	ret
+	jp flush_display
 
 
 clear_statln:
@@ -258,15 +242,33 @@ clear_statln:
 	ret
 
 
-draw_statln:
-	; serio
-	ld hl, _statln
+; @param HL: &dest
+draw_statln_serio:
 	ldh a, [_serio_status]
-	ld b, a
 	call fmt_serio_status
+	ld a, STATLN_BG_CHR
+	ld [hl+], a
 
-	; rSC, rSB
-	ld hl, _statln + STATLN_LINE_LEN
+	ldh a, [hTimeoutTicks]
+	ld b, a
+	call utile_print_h8
+	ld a, "/"
+	ld [hl+], a
+	ldh a, [hSerialTransferTimeout]
+	ld b, a
+	call utile_print_h8
+	ld a, STATLN_BG_CHR
+	ld [hl+], a
+
+	ldh a, [_serio_tx]
+	ld b, a
+	ldh a, [_serio_rx]
+	ld c, a
+	jp fmt_txrx
+
+
+; @param HL: &dest
+draw_statln_sc_sb:
 	ldh a, [rSC]
 	ld b, a
 	call fmt_SC
@@ -274,13 +276,11 @@ draw_statln:
 	ld [hl+], a
 	ldh a, [rSB]
 	ld b, a
-	call fmt_SB
-
-	ret
+	jp fmt_SB
 
 
+; @param HL: &dest
 draw_collection:
-	ld hl, _collection_display_buffer
 	ld de, _collection
 	ld c, COLLECTION_MAX_COUNT
 .fmt_loop
@@ -289,10 +289,8 @@ draw_collection:
 	ld b, a
 	ld a, [de]
 	inc de
-	ld [hl+], a
-	call utile_print_h8
+	call draw_coll_item
 
-	; mark end
 	call _get_collection_count
 	ld b, a
 	ld a, COLLECTION_MAX_COUNT
@@ -302,13 +300,34 @@ draw_collection:
 	jr nz, :+
 	ld b, "<"
 :
-
 	ld a, b
 	ld [hl+], a
 	dec c
 	jr nz, .fmt_loop
-
 	ret
+
+
+; @param A: code
+; @param B: value
+draw_coll_item:
+	cp SERIO_DONE
+	jr nz, :+
+	ld a, "r"
+	ld [hl+], a
+	jp utile_print_h8
+:
+	cp SERIO_TIMEOUT
+	jr nz, :+
+	ld a, "T"
+	ld [hl+], a
+	ld a, "/"
+	ld [hl+], a
+	ld a, "O"
+	ld [hl+], a
+	ret
+:
+	ld [hl+], a
+	jp utile_print_h8
 
 
 flush_display:
