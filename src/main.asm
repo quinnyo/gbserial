@@ -104,12 +104,12 @@ main::
 
 
 do_host_transfer:
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_IDLE
 	ret nz
 	ld a, [_tick]
 	and $7F
-	ldh [_serio_tx], a
+	ldh [hSerTx], a
 	ld d, a
 	ld e, "T"
 	call log_event
@@ -117,12 +117,12 @@ do_host_transfer:
 
 
 do_guest_transfer:
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_IDLE
 	ret nz
 	ld a, [_tick]
 	and $7F
-	ldh [_serio_tx], a
+	ldh [hSerTx], a
 	ld d, a
 	ld e, "t"
 	call log_event
@@ -132,7 +132,7 @@ do_guest_transfer:
 do_timeout_adjust:
 	ldh a, [hKeysPressed]
 	ld b, a
-	ldh a, [hSerialTransferTimeout]
+	ld a, [wSerTransferTimeout]
 	cp 240
 	jr nc, :+
 	bit PADB_UP, b
@@ -145,14 +145,14 @@ do_timeout_adjust:
 	jr nc, :+
 	xor a
 :
-	ldh [hSerialTransferTimeout], a
+	ld [wSerTransferTimeout], a
 	ret
 
 
 ; Check if transfer is complete.
 ; @mut: AF, DE, HL
 _serio_sync_poll:
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_WORKING
 	jp z, serio_tick ; still working, update timeout
 	jr _process_transfer_result
@@ -167,7 +167,7 @@ _serio_sync_wait:
 	nop
 	call redraw
 .serio_sync:
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_WORKING
 	jr z, .serio_sync_halt
 	jr _process_transfer_result
@@ -180,10 +180,10 @@ _process_transfer_result:
 	ret c
 
 	ld e, a
-	ldh a, [_serio_rx]
+	ldh a, [hSerRx]
 	ld d, a
 	ld a, SERIO_IDLE
-	ldh [_serio_status], a
+	ldh [hSerStatus], a
 	jr log_event
 
 
@@ -244,25 +244,24 @@ clear_statln:
 
 ; @param HL: &dest
 draw_statln_serio:
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	call fmt_serio_status
 	ld a, STATLN_BG_CHR
 	ld [hl+], a
 
 	ldh a, [hTimeoutTicks]
-	ld b, a
-	call utile_print_h8
-	ld a, "/"
-	ld [hl+], a
-	ldh a, [hSerialTransferTimeout]
+	and a
+	jr nz, :+
+	ld a, [wSerTransferTimeout]
+:
 	ld b, a
 	call utile_print_h8
 	ld a, STATLN_BG_CHR
 	ld [hl+], a
 
-	ldh a, [_serio_tx]
+	ldh a, [hSerTx]
 	ld b, a
-	ldh a, [_serio_rx]
+	ldh a, [hSerRx]
 	ld c, a
 	jp fmt_txrx
 

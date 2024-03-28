@@ -16,18 +16,21 @@ irq_serial:
 
 section "hSerial", hram
 ; The next value to transmit
-_serio_tx:: db
+hSerTx:: db
 ; Holds the most recently received byte.
-_serio_rx:: db
+hSerRx:: db
 ; Serial link status/flags
-_serio_status:: db
-; Externally clocked transfer timeout duration
-hSerialTransferTimeout:: db
+hSerStatus:: db
 ; timeout ticks remaining
 hTimeoutTicks:: db
 
 
-section "serio", rom0
+section "wSerial", wram0
+; Externally clocked transfer timeout duration
+wSerTransferTimeout:: db
+
+
+section "Serio", rom0
 
 serio_init::
 	ld hl, rIF
@@ -36,19 +39,21 @@ serio_init::
 	set IEB_SERIAL, [hl]
 
 	ld a, $AA
-	ldh [_serio_tx], a
+	ldh [hSerTx], a
 	ld a, $99
-	ldh [_serio_rx], a
+	ldh [hSerRx], a
 	ld a, SERIO_IDLE
-	ldh [_serio_status], a
+	ldh [hSerStatus], a
 	xor a
-	ldh [hSerialTransferTimeout], a
 	ldh [hTimeoutTicks], a
+	ld a, 8
+	ld [wSerTransferTimeout], a
+
 	ret
 
 
 serio_tick::
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_WORKING
 	ret nz
 	ldh a, [hTimeoutTicks]
@@ -65,14 +70,14 @@ serio_tick::
 ; Start transfer as host (internal clock).
 serio_host_start::
 	ld a, SERIO_WORKING
-	ldh [_serio_status], a
+	ldh [hSerStatus], a
 	; no timeout for clock source
 	xor a
 	ldh [hTimeoutTicks], a
 	; Set internal clock source, without starting the transfer.
 	ld a, $01
 	ldh [rSC], a
-	ldh a, [_serio_tx]
+	ldh a, [hSerTx]
 	ldh [rSB], a
 	; Now start the transfer
 	ld a, $81
@@ -83,13 +88,13 @@ serio_host_start::
 ; Start transfer as guest (external clock).
 serio_guest_start::
 	ld a, SERIO_WORKING
-	ldh [_serio_status], a
+	ldh [hSerStatus], a
 	; Use timeout when using external clock source
-	ldh a, [hSerialTransferTimeout]
+	ld a, [wSerTransferTimeout]
 	ldh [hTimeoutTicks], a
 	xor a
 	ldh [rSC], a
-	ldh a, [_serio_tx]
+	ldh a, [hSerTx]
 	ldh [rSB], a
 	ld a, $80
 	ldh [rSC], a
@@ -98,7 +103,7 @@ serio_guest_start::
 
 ; @param A: new status code
 serio_stop::
-	ldh [_serio_status], a
+	ldh [hSerStatus], a
 	xor a
 	ldh [rSC], a
 	ldh [hTimeoutTicks], a
@@ -108,13 +113,13 @@ serio_stop::
 ; @mut: AF, B
 _serio_complete_transfer:
 	; check that we were expecting a transfer
-	ldh a, [_serio_status]
+	ldh a, [hSerStatus]
 	cp SERIO_WORKING
 	ret nz ; @TODO: should this be an error condition?
 
 	; store the received value
 	ldh a, [rSB]
-	ldh [_serio_rx], a
+	ldh [hSerRx], a
 
 	ld a, SERIO_DONE
 	jr serio_stop
