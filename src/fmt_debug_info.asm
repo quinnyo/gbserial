@@ -21,11 +21,18 @@ endm
 
 
 section "fmt_debug_info_data", rom0
+strDown: StrDB "down"
+strQueue: StrDB "Q:"
 strIdle: StrDB "idle"
-strWorking: StrDB "work"
+strActive: StrDB "actv"
 strDone: StrDB "done"
 strTimeout: StrDB "T-O!"
-strUnknown: StrDB "??"
+
+
+strHshkConnected: StrDB "Conn OK"
+strHshkWorking:   StrDB "Working"
+strHshkInit:      StrDB "-------"
+strHshkAborted:   StrDB "Aborted"
 
 
 section "fmt_debug_info", rom0
@@ -34,25 +41,36 @@ section "fmt_debug_info", rom0
 ; @mut: AF, BC, DE, HL
 fmt_serio_status::
 	ld c, $FF ; str terminator
-	ld de, strIdle
-	cp SERIO_IDLE
-	jp z, memcpy_terminated
+	ld de, strDown :: bit SIOSTB_ENABLE, a :: jp z, memcpy_terminated
 
-	ld de, strWorking
-	cp SERIO_WORKING
-	jp z, memcpy_terminated
+	ld b, a ; safe keeping
+	call fmt_serio_xfer_status
 
-	ld de, strDone
-	cp SERIO_DONE
-	jp z, memcpy_terminated
+	ld de, strQueue
+	call memcpy_terminated
+	ld a, "0"
+	bit SIOSTB_QUEUE, b
+	jr z, :+
+	ld a, "1"
+:
+	ld [hl+], a
+	ld a, " "
+	ld a, b
+	ret
 
-	ld de, strTimeout
-	cp SERIO_TIMEOUT
-	jp z, memcpy_terminated
 
-	call utile_print_h8
-	ld de, strUnknown
-	jp memcpy_terminated
+; @param A: value
+; @param HL: &dest
+; @mut: AF, BC, DE, HL
+fmt_serio_xfer_status::
+	ld c, $FF ; str terminator
+	and SIOSTF_XFER_STATUS
+	ld de, strIdle :: cp SIOSTF_XFER_IDLE :: jp z, memcpy_terminated
+	; ld de, strQueued :: cp SIOSTF_XFER_QUEUED :: jp z, memcpy_terminated
+	ld de, strActive :: cp SIOSTF_XFER_ACTIVE :: jp z, memcpy_terminated
+	ld de, strDone :: cp SIOSTF_XFER_DONE :: jp z, memcpy_terminated
+	ld de, strTimeout :: cp SIOSTF_XFER_TIMEOUT :: jp z, memcpy_terminated
+	jp print_bracketed_h8
 
 
 ; @param B: Tx value
@@ -77,12 +95,7 @@ fmt_SB::
 	ld [hl+], a
 	ld a, "B"
 	ld [hl+], a
-	ld a, "\{"
-	ld [hl+], a
-	call utile_print_h8
-	ld a, "}"
-	ld [hl+], a
-	ret
+	jp print_bracketed_h8
 
 
 ; @param B: value
@@ -101,6 +114,38 @@ fmt_SC::
 	ld [hl+], a
 	LoadBitSwitch a, 0, b, "0", "C"
 	ld [hl+], a
+	ld a, "}"
+	ld [hl+], a
+	ret
+
+
+; @param A: value
+; @param HL: &dest
+; @mut: AF, BC, DE, HL
+fmt_hshk_status::
+	ld c, $FF
+	ld de, strHshkConnected :: cp HSHK_CONNECTED :: jp z, memcpy_terminated
+	ld de, strHshkWorking   :: cp HSHK_WORKING   :: jp z, memcpy_terminated
+	ld de, strHshkInit      :: cp HSHK_INIT      :: jp z, memcpy_terminated
+	ld de, strHshkAborted   :: cp HSHK_ABORTED   :: jp z, memcpy_terminated
+	ret
+
+
+; @param A: value
+; @param HL: &dest
+; @mut: AF, BC, DE, HL
+fmt_hshk_count::
+	ld b, a
+	ld a, "(" :: ld [hl+], a
+	call utile_print_hmin
+	ld a, ")" :: ld [hl+], a
+	ret
+
+
+print_bracketed_h8:
+	ld a, "\{"
+	ld [hl+], a
+	call utile_print_h8
 	ld a, "}"
 	ld [hl+], a
 	ret

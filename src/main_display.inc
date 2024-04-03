@@ -17,7 +17,10 @@ def COLLECTION_MAX_COUNT equ 16
 
 
 section "wMainDisplay", wram0
-_statln: ds STATLN_LINE_COUNT * STATLN_LINE_LEN
+_statln:
+for I, STATLN_LINE_COUNT
+	.line{u:I}: ds STATLN_LINE_LEN
+endr
 _collection_display_buffer: ds COLLECTION_MAX_COUNT * COLLDISP_ITEM_WIDTH
 
 _collection:: ds COLLECTION_MAX_COUNT * COLLITEM_SIZE
@@ -60,16 +63,24 @@ collection_append::
 	ret
 
 
-
 redraw:
 	ld hl, _statln
 	call draw_statln_serio
-	ld hl, _statln + STATLN_LINE_LEN
+	ld bc, _statln.line1
+	ld d, STATLN_BG_CHR
+	call _clear_to
+	call draw_hshk
+	ld bc, _statln.line2
+	ld d, STATLN_BG_CHR
+	call _clear_to
 	call draw_statln_sc_sb
 
-	ld hl, _collection_display_buffer
-	call draw_collection
-	jp flush_display
+	; ld hl, _collection_display_buffer
+	; call draw_collection
+
+	call flush_statln
+	; call flush_collection
+	ret
 
 
 clear_statln:
@@ -87,6 +98,10 @@ clear_statln:
 draw_statln_serio:
 	ldh a, [hSerStatus]
 	call fmt_serio_status
+	ldh a, [hSerStatus]
+	bit SIOSTB_ENABLE, a
+	ret z
+
 	ld a, STATLN_BG_CHR
 	ld [hl+], a
 
@@ -107,6 +122,23 @@ draw_statln_serio:
 	jp fmt_txrx
 
 
+; @param D: value
+; @param HL: &dest
+; @param BC: &end
+_clear_to:
+.loop
+	ld a, h
+	cp b
+	jr c, .continue
+	ld a, l
+	cp c
+	ret nc
+.continue
+	ld a, d
+	ld [hl+], a
+	jr .loop
+
+
 ; @param HL: &dest
 draw_statln_sc_sb:
 	ldh a, [rSC]
@@ -117,6 +149,22 @@ draw_statln_sc_sb:
 	ldh a, [rSB]
 	ld b, a
 	jp fmt_SB
+
+
+; @param HL: &dest
+draw_hshk:
+	ld a, [wHshkState]
+	call fmt_hshk_status
+	ld a, [wHshkCount]
+	call fmt_hshk_count
+
+	; ld de, wHshkState
+	; ld a, [de] :: inc de ; wHshkState
+	; ld a, [de] :: inc de ; wHshkCount
+	; ld a, [de] :: inc de ; wHshkLastTx
+	; ld a, [de] :: inc de ; wHshkLastRx
+	; ld a, [de] :: inc de ; wHshkExpect
+	ret
 
 
 ; @param HL: &dest
@@ -150,13 +198,13 @@ draw_collection:
 ; @param A: code
 ; @param B: value
 draw_coll_item:
-	cp SERIO_DONE
+	cp SIOSTF_XFER_DONE
 	jr nz, :+
 	ld a, "r"
 	ld [hl+], a
 	jp utile_print_h8
 :
-	cp SERIO_TIMEOUT
+	cp SIOSTF_XFER_TIMEOUT
 	jr nz, :+
 	ld a, "T"
 	ld [hl+], a
@@ -170,8 +218,7 @@ draw_coll_item:
 	jp utile_print_h8
 
 
-flush_display:
-	; flush status lines
+flush_statln:
 	ld hl, STATLN_DEST
 	ld de, _statln
 	ld b, STATLN_LINE_LEN
@@ -184,8 +231,10 @@ flush_display:
 	ld de, _statln + STATLN_LINE_LEN * 2
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+	ret
 
-	; flush collection
+
+flush_collection:
 	call _get_collection_count
 	assert COLLDISP_ITEM_WIDTH == 4
 	add a
