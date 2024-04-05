@@ -61,8 +61,8 @@ handshake_init::
 	ld [wHshkLastRx], a
 	ld a, HSHK_RETRIES_DEFAULT
 	ld [wHshkRetries], a
-	ld a, low(handshake_rx) :: ld [wSerioRxHandler + 0], a
-	ld a, high(handshake_rx) :: ld [wSerioRxHandler + 1], a
+	ld a, low(_hshk_on_xfer_end) :: ld [wSerioOnXferEnd + 0], a
+	ld a, high(_hshk_on_xfer_end) :: ld [wSerioOnXferEnd + 1], a
 	ret
 
 
@@ -80,8 +80,8 @@ handshake_start::
 	ld [wHshkLastRx], a
 	ld a, HSHK_RETRIES_DEFAULT
 	ld [wHshkRetries], a
-	ld a, low(handshake_rx) :: ld [wSerioRxHandler + 0], a
-	ld a, high(handshake_rx) :: ld [wSerioRxHandler + 1], a
+	ld a, low(_hshk_on_xfer_end) :: ld [wSerioOnXferEnd + 0], a
+	ld a, high(_hshk_on_xfer_end) :: ld [wSerioOnXferEnd + 1], a
 
 	jr _tx_first
 
@@ -114,6 +114,7 @@ handshake_tick::
 
 
 ; Serio RX handler for handshake
+_hshk_on_xfer_end:
 handshake_rx::
 	; call serio_continue
 	GetTransferStatus

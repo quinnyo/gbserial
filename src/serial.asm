@@ -33,15 +33,15 @@ section "wSerial", wram0
 wSerConfig:: db
 ; Externally clocked transfer timeout duration
 wSerTransferTimeout:: db
-
-wSerioRxHandler:: dw
+; Transfer end event callback address. Set to $FFFF to disable.
+wSerioOnXferEnd:: dw
 
 
 section "Serio", rom0
 
 ; @mut: AF, HL
 serio_init::
-	ld a, $FF :: ld [wSerioRxHandler + 0], a :: ld [wSerioRxHandler + 1], a
+	ld a, $FF :: ld [wSerioOnXferEnd + 0], a :: ld [wSerioOnXferEnd + 1], a
 	ld a, SERIO_TIMEOUT_TICKS_DEFAULT :: ld [wSerTransferTimeout], a
 	ld a, SERIO_CFGF_DEFAULT :: ld [wSerConfig], a
 	ld a, $AA :: ldh [hSerTx], a
@@ -95,7 +95,7 @@ serio_tick::
 
 	; if transfer ended, do callback
 	bit SIOSTB_XFER_ENDED, a
-	jp nz, _serio_rx_dispatch
+	jp nz, _on_xfer_end_dispatch
 
 	IsTransferActive
 	jr nz, _do_xfer_queue ; transfer not active, update queue
@@ -164,8 +164,8 @@ _do_timeout:
 	ret
 
 
-_serio_rx_dispatch:
-	ld hl, wSerioRxHandler
+_on_xfer_end_dispatch:
+	ld hl, wSerioOnXferEnd
 	ld a, [hl+]
 	ld h, [hl]
 	ld l, a
