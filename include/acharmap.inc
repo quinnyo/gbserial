@@ -96,5 +96,13 @@ charmap "-", $5B
 charmap ".", $5C
 charmap "/", $5D
 charmap " ", $5E
+; $5F
+
+; afont-extra
+charmap "^yes^", $60
+charmap "^no^", $61
+charmap "^rx^", $62
+charmap "^tx^", $63
 
 endc ; ACHARMAP_INC
+
