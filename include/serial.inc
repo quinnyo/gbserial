@@ -15,7 +15,7 @@ def SERIO_CFGF_DEFAULT equ 0
 
 def SIOSTB_ENABLE       equ 0
 def SIOSTB_QUEUE        equ 2
-def SIOSTB_XFER_INFO0   equ 4
+def SIOSTB_XFER_TIMEOUT equ 4
 def SIOSTB_XFER_ACTIVE  equ 6
 def SIOSTB_XFER_ENDED   equ 7
 
