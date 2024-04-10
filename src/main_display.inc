@@ -7,7 +7,7 @@ def BGMAP equ $9800
 def STATLN_DEST equ BGMAP
 def STATLN_BG_CHR equ " "
 def STATLN_LINE_LEN equ 20
-def STATLN_LINE_COUNT equ 4
+def STATLN_LINE_COUNT equ 5
 def COLLDISP_DEST equ BGMAP + (STATLN_LINE_COUNT + 1) * 32
 def COLLDISP_ITEM_WIDTH equ 4
 def COLLDISP_COLUMNS equ 2
@@ -66,14 +66,37 @@ collection_append::
 redraw:
 	ld hl, _statln
 	call draw_statln_serio
+
 	ld bc, _statln.line1
 	ld d, STATLN_BG_CHR
 	call _clear_to
 	call draw_hshk
+
 	ld bc, _statln.line2
 	ld d, STATLN_BG_CHR
 	call _clear_to
-	call draw_statln_sc_sb
+	call draw_packet_sys
+
+	ld bc, _statln.line3
+	ld d, STATLN_BG_CHR
+	call _clear_to
+	ld a, "^tx^" :: ld [hl+], a
+	ld c, PKT_DATA_SZ
+	ld de, _packet_tx
+	call draw_packet_buffer
+
+	ld bc, _statln.line4
+	ld d, STATLN_BG_CHR
+	call _clear_to
+	ld a, "^rx^" :: ld [hl+], a
+	ld c, PKT_DATA_SZ
+	ld de, _packet_rx
+	call draw_packet_buffer
+
+;	ld bc, _statln.line4
+;	ld d, STATLN_BG_CHR
+;	call _clear_to
+;	call draw_statln_sc_sb
 
 	; ld hl, _collection_display_buffer
 	; call draw_collection
@@ -157,13 +180,44 @@ draw_hshk:
 	call fmt_hshk_status
 	ld a, [wHshkCount]
 	call fmt_hshk_count
+	ret
 
-	; ld de, wHshkState
-	; ld a, [de] :: inc de ; wHshkState
-	; ld a, [de] :: inc de ; wHshkCount
-	; ld a, [de] :: inc de ; wHshkLastTx
-	; ld a, [de] :: inc de ; wHshkLastRx
-	; ld a, [de] :: inc de ; wHshkExpect
+
+; @param HL: &dest
+draw_packet_sys:
+	ld a, [wPacketCheckLoc]
+	call fmt_packet_check
+	ld a, ":" :: ld [hl+], a
+	ld a, [wPacketCheckRem]
+	call fmt_packet_check
+
+	ld a, " " :: ld [hl+], a
+	ld a, [wPacketStateLoc]
+	call fmt_packet_state
+	ld a, ":" :: ld [hl+], a
+	ld a, [wPacketStateRem]
+	call fmt_packet_state
+
+	ret
+
+
+; @param C: data len
+; @param DE: &packet
+; @param HL: &dest
+draw_packet_buffer:
+	ld a, [de]
+	inc de
+	ld b, a
+	call utile_print_h8
+	ld a, " " :: ld [hl+], a
+:
+	ld a, [de]
+	inc de
+	ld b, a
+	call utile_print_h8
+
+	dec c
+	jr nz, :-
 	ret
 
 
@@ -223,12 +277,20 @@ flush_statln:
 	ld de, _statln
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
-	ld hl, STATLN_DEST + 32
-	ld de, _statln + STATLN_LINE_LEN
+	ld hl, STATLN_DEST + 32 * 1
+	ld de, _statln + STATLN_LINE_LEN * 1
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
-	ld hl, STATLN_DEST + 64
+	ld hl, STATLN_DEST + 32 * 2
 	ld de, _statln + STATLN_LINE_LEN * 2
+	ld b, STATLN_LINE_LEN
+	call bgmap_buffer_flush
+	ld hl, STATLN_DEST + 32 * 3
+	ld de, _statln + STATLN_LINE_LEN * 3
+	ld b, STATLN_LINE_LEN
+	call bgmap_buffer_flush
+	ld hl, STATLN_DEST + 32 * 4
+	ld de, _statln + STATLN_LINE_LEN * 4
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
 	ret

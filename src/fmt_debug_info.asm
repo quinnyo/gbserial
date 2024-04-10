@@ -2,6 +2,7 @@
 include "hw.inc"
 include "acharmap.inc"
 include "serial.inc"
+include "packet.inc"
 
 
 ; LoadBitSwitch Q, u, R, c0, c1
@@ -22,7 +23,7 @@ endm
 
 section "fmt_debug_info_data", rom0
 strDown: StrDB "down"
-strQueue: StrDB "Q:"
+strQueue: StrDB " Q:"
 strIdle: StrDB "idle"
 strActive: StrDB "actv"
 strDone: StrDB "done"
@@ -34,6 +35,18 @@ strHshkWorking:   StrDB "Working"
 strHshkInit:      StrDB "-------"
 strHshkAborted:   StrDB "Aborted"
 
+
+strPkstNull:    StrDB "NUL"
+strPkstPrep:    StrDB "PRE"
+strPkstStopped: StrDB "STP"
+strPkstReady:   StrDB "RDY"
+strPkstXfer:    StrDB "XFR"
+strPkstCheck:   StrDB "CHK"
+strPkstOk:      StrDB "OK!"
+strPkstError:   StrDB "ERR"
+
+strPktCheckOk:   StrDB "Chk^yes^"
+strPktCheckFail: StrDB "Chk^no^"
 
 section "fmt_debug_info", rom0
 ; @param A: value
@@ -66,7 +79,6 @@ fmt_serio_xfer_status::
 	ld c, $FF ; str terminator
 	and SIOSTF_XFER_STATUS
 	ld de, strIdle :: cp SIOSTF_XFER_IDLE :: jp z, memcpy_terminated
-	; ld de, strQueued :: cp SIOSTF_XFER_QUEUED :: jp z, memcpy_terminated
 	ld de, strActive :: cp SIOSTF_XFER_ACTIVE :: jp z, memcpy_terminated
 	ld de, strDone :: cp SIOSTF_XFER_DONE :: jp z, memcpy_terminated
 	ld de, strTimeout :: cp SIOSTF_XFER_TIMEOUT :: jp z, memcpy_terminated
@@ -139,6 +151,35 @@ fmt_hshk_count::
 	ld a, "(" :: ld [hl+], a
 	call utile_print_hmin
 	ld a, ")" :: ld [hl+], a
+	ret
+
+
+; @param A: value
+; @param HL: &dest
+; @mut: AF, HL
+fmt_packet_state::
+	ld c, $FF
+	ld de, strPkstNull    :: cp _PKST_NULL    :: jp z, memcpy_terminated
+	ld de, strPkstPrep    :: cp _PKST_PREP    :: jp z, memcpy_terminated
+	ld de, strPkstStopped :: cp _PKST_STOPPED :: jp z, memcpy_terminated
+	ld de, strPkstReady   :: cp _PKST_READY   :: jp z, memcpy_terminated
+	ld de, strPkstXfer    :: cp _PKST_XFER    :: jp z, memcpy_terminated
+	ld de, strPkstCheck   :: cp _PKST_CHECK   :: jp z, memcpy_terminated
+	ld de, strPkstOk      :: cp _PKST_OK      :: jp z, memcpy_terminated
+	ld de, strPkstError   :: cp _PKST_ERROR   :: jp z, memcpy_terminated
+	ret
+
+
+; @param A: value
+; @param HL: &dest
+; @mut: AF, B, HL
+fmt_packet_check::
+	ld b, "^yes^" :: cp PKT_CHECK_OK   :: jr z, .write
+	ld b, "^no^"  :: cp PKT_CHECK_FAIL :: jr z, .write
+	ld b, "?"
+.write
+	ld a, b
+	ld [hl+], a
 	ret
 
 
