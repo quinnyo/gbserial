@@ -72,6 +72,8 @@ _xfer_remaining: db ; number of byte transfers remaining in packet transfer
 _tx_index: db ; offset to next byte of the tx packet buffer
 _rx_index: db ; offset to next byte of the rx packet buffer
 
+_retries: db
+
 wPacketCheckLoc::
 _check_loc: db
 wPacketCheckRem::
@@ -95,6 +97,7 @@ packet_init::
 	ld [_xfer_remaining], a
 	ld [_tx_index], a
 	ld [_rx_index], a
+	ld [_retries], a
 	ld [_check_loc], a
 	ld [_check_rem], a
 	ld hl, _packet_tx
@@ -149,6 +152,9 @@ assert PKT_CHECK_SZ == 1, "assuming checksum size here"
 ; Start packet transmission
 ; @mut: AF, C, HL
 packet_tx_begin::
+	ld a, PACKET_RETRY_COUNT_DEFAULT
+	ld [_retries], a
+_ready:
 	ld a, _PKST_READY
 	ld [_pkst_loc], a
 	call serio_transmit
@@ -207,6 +213,7 @@ _do_pkst_next:
 .prep:
 	ldh a, [hSerRx]
 	ld [_pkst_rem], a
+	; lazy
 	; just send stateus
 	ret
 .ready:
@@ -258,25 +265,34 @@ _do_pkst_next:
 	call serio_transmit
 	jp serio_continue
 .check:
-	ld c, _PKST_OK
 	ldh a, [hSerRx]
 	ld [_check_rem], a
 	cp PKT_CHECK_OK
-	jr z, :+
-	set PKSTB_ERROR, c
-:
+	jr nz, _retry
 	ld a, [_check_loc]
 	cp PKT_CHECK_OK
-	jr z, :+
-	set PKSTB_ERROR, c
-:
-	ld a, c
+	jr nz, _retry
+	ld a, _PKST_OK
 	ld [_pkst_loc], a
 	ret
 .result:
 	ldh a, [hSerRx]
 	ld [_pkst_rem], a
 	ret
+
+
+_retry:
+	; do retry limit
+	ld a, [_retries]
+	and a
+	jr nz, :+
+	ld a, _PKST_ERROR
+	ld [_pkst_loc], a
+	ret
+:
+	dec a
+	ld [_retries], a
+	jp _ready
 
 
 _tx_next_byte:
