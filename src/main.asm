@@ -301,3 +301,6 @@ _build_packet_gen:
 	ld [wPktGen], a
 	jp packet_tx_finalise
 
+
+;
+; vim:ft=rgbasm

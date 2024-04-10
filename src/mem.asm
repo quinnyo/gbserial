@@ -33,3 +33,6 @@ memcpy_terminated::
 	inc de
 	ld [hl+], a
 	jr :-
+
+;
+; vim:ft=rgbasm

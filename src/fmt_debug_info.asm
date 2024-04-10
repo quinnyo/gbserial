@@ -190,3 +190,6 @@ print_bracketed_h8:
 	ld a, "}"
 	ld [hl+], a
 	ret
+
+;
+; vim:ft=rgbasm

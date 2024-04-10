@@ -202,3 +202,5 @@ A <-- B: 110
 (got something else)
 
 */
+;
+; vim:ft=rgbasm

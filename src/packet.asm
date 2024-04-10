@@ -321,3 +321,6 @@ _checksum:
 	cpl
 	ret
 
+
+;
+; vim:ft=rgbasm

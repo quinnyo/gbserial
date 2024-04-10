@@ -55,3 +55,6 @@ input_update::
 
 
 
+
+;
+; vim:ft=rgbasm

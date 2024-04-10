@@ -20,3 +20,6 @@ load_afont::
 	ld bc, sizeof("assets/afont.chr")
 	ld hl, $9000
 	jp memcpy
+
+;
+; vim:ft=rgbasm

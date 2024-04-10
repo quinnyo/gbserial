@@ -34,3 +34,6 @@ utile_print_hmin::
 	and $F0
 	jr z, utile_print_h4
 	jr utile_print_h8
+
+;
+; vim:ft=rgbasm

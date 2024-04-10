@@ -106,3 +106,6 @@ charmap "^tx^", $63
 
 endc ; ACHARMAP_INC
 
+
+;
+; vim:ft=rgbasm

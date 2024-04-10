@@ -5,3 +5,6 @@ SECTION "Build date", ROM0
 BuildDate::
     db __ISO_8601_UTC__
     db 0
+
+;
+; vim:ft=rgbasm

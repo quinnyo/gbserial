@@ -73,3 +73,6 @@ load_tiles::
 	ld hl, $8800
 	jp memcpy
 
+
+;
+; vim:ft=rgbasm

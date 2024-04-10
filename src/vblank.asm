@@ -127,3 +127,6 @@ hOAMCopyRoutine::
 ; .end
 endl
 pops
+
+;
+; vim:ft=rgbasm

@@ -57,3 +57,6 @@ def PKSTB_ERROR_RX equ 2
 
 endc ; PACKET_INC
 
+
+;
+; vim:ft=rgbasm

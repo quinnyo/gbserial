@@ -70,3 +70,6 @@ macro IsTransferActive
 endm
 
 endc ; SERIAL_INC
+
+;
+; vim:ft=rgbasm

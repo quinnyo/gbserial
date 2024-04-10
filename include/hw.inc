@@ -6,3 +6,6 @@ include "hardware.inc/hardware.inc"
 
 endc ; HW_INC
 
+
+;
+; vim:ft=rgbasm

@@ -59,3 +59,6 @@ lcd_on::
 	ldh [hLCDC], a
 	ldh [rLCDC], a
 	ret
+
+;
+; vim:ft=rgbasm

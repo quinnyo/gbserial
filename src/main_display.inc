@@ -348,3 +348,6 @@ bgmap_buffer_flush:
 	dec b
 	jr nz, :-
 	ret
+
+;
+; vim:ft=rgbasm

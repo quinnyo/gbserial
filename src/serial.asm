@@ -209,3 +209,6 @@ serio_interrupt_disable:
 	ld hl, rIF
 	res IEB_SERIAL, [hl]
 	ret
+
+;
+; vim:ft=rgbasm
