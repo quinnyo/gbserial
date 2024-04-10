@@ -109,6 +109,7 @@ def SERIAL_STATE_INIT rb 1
 def SERIAL_STATE_HANDSHAKE rb 1
 def SERIAL_STATE_BUILD_PACKET rb 1
 def SERIAL_STATE_PACKET rb 1
+def SERIAL_STATE_BLASTER rb 1
 
 
 section "wSerialdemo", wram0
@@ -116,7 +117,6 @@ section "wSerialdemo", wram0
 wSerialState: db
 wTick: dw
 wPktGen: db
-wPacketDataIndex: db
 
 
 section "serialdemo", rom0
@@ -132,7 +132,6 @@ serialdemo_init:
 	ld [wTick + 0], a
 	ld [wTick + 1], a
 	ld [wPktGen], a
-	ld [wPacketDataIndex], a
 
 	ret
 
@@ -176,12 +175,26 @@ _host:
 	jp handshake_host
 
 
+_packet_start:
+	ld a, SERIAL_STATE_PACKET
+	ld [wSerialState], a
+	jp packet_init
+	ret
+
+
+_blaster_start:
+	ld a, SERIAL_STATE_BLASTER
+	ld [wSerialState], a
+	ret
+
+
 ; @param B: keys pressed
 _state_update:
 	ld a, [wSerialState]
 	cp SERIAL_STATE_INIT :: jr z, .update_init
 	cp SERIAL_STATE_HANDSHAKE :: jr z, .update_hshk
 	cp SERIAL_STATE_PACKET :: jr z, .update_packet
+	cp SERIAL_STATE_BLASTER :: jr z, .update_blaster
 	ret
 .update_init:
 	bit PADB_A, b :: jr nz, _join
@@ -189,19 +202,21 @@ _state_update:
 	ret
 .update_hshk:
 	call _process_input_hshk
-	ld a, [wHshkState]
-	cp HSHK_CONNECTED
-	jr nz, :+
-	ld a, SERIAL_STATE_PACKET
-	ld [wSerialState], a
-	xor a
-	ld [wPacketDataIndex], a
-	jp packet_init
-:
 	call serio_tick
 	ret
 .update_packet:
 	call _process_input_packet
+	call serio_tick
+	ret
+.update_blaster:
+	ldh a, [hSerStatus]
+	bit SIOSTB_QUEUE, a
+	jr nz, :+
+	ldh a, [hSerTx]
+	add b
+	call serio_transmit
+	call serio_continue
+:
 	call serio_tick
 	ret
 
@@ -213,7 +228,10 @@ _process_input_hshk:
 	jr z, :+
 		bit PADB_A, b :: jp nz, handshake_join
 		bit PADB_START, b :: jp nz, handshake_host
+		ret
 :
+	bit PADB_A, b :: jp nz, _packet_start
+	bit PADB_SELECT, b :: jr nz, _blaster_start
 	ret
 
 
