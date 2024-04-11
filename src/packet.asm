@@ -140,7 +140,7 @@ assert PKT_CHECK_SZ == 1, "assuming checksum size here"
 	ld [_packet_tx.check], a
 	ld hl, _packet_tx
 	ld c, PKT_SZ
-	call _checksum
+	call Checksum8
 	ld [_packet_tx.check], a
 
 	ld a, [_pkst_loc]
@@ -251,7 +251,7 @@ _do_pkst_next:
 	ld hl, _packet_rx
 	ld a, [_rx_index]
 	ld c, a
-	call _checksum
+	call Checksum8
 
 	; send result
 	ld c, PKT_CHECK_OK
@@ -316,25 +316,6 @@ _reset_xfer:
 	ld [_packet_rx], a
 	dec c
 	jr nz, :-
-	ret
-
-
-; calculate a checksum of a block of memory
-; @param HL: &data
-; @param C: len
-; @return A: sum
-; @mut: AF, C, HL
-_checksum:
-	ld a, c
-	and a
-	ret z
-	scf
-:
-	adc [hl]
-	inc hl
-	dec c
-	jr nz, :-
-	cpl
 	ret
 
 

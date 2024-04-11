@@ -231,7 +231,7 @@ _process_input_hshk:
 		ret
 :
 	bit PADB_A, b :: jp nz, _packet_start
-	bit PADB_SELECT, b :: jr nz, _blaster_start
+	bit PADB_SELECT, b :: jp nz, _blaster_start
 	ret
 
 
