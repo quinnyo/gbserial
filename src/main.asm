@@ -42,7 +42,6 @@ main::
 	jr nz, .iter_rows
 
 	call clear_statln
-	call redraw
 	call lcd_on
 	call serialdemo_init
 
@@ -74,7 +73,7 @@ main::
 	ld [hl+], a
 
 	; drawing status waits for vsync so put it after everything else.
-	call redraw
+	call display_flush
 
 	jr .vsync
 .vsync_halt:
@@ -145,6 +144,13 @@ serialdemo_update:
 	call _process_input
 	call _state_update
 
+	xor a
+	call display_statln_start
+	push bc
+	call draw_statln_serio
+	pop bc
+	call display_clear_to
+
 	ld hl, wTick
 	inc [hl]
 	jr nz, :+
@@ -157,35 +163,42 @@ serialdemo_update:
 ; @param B: keys pressed
 _process_input:
 	bit PADB_B, b
-	jp z, :+
-		call packet_stop
-		call handshake_abort
-		ld a, SERIAL_STATE_INIT
-		ld [wSerialState], a
-		ret
-:
+	jr nz, _reset
+	ret
+
+
+_reset:
+	call packet_stop
+	call handshake_abort
+	call display_clear
+	ld a, SERIAL_STATE_INIT
+	ld [wSerialState], a
 	ret
 
 
 _join:
+	call display_clear
 	ld a, SERIAL_STATE_HANDSHAKE
 	ld [wSerialState], a
 	jp handshake_join
 
 
 _host:
+	call display_clear
 	ld a, SERIAL_STATE_HANDSHAKE
 	ld [wSerialState], a
 	jp handshake_host
 
 
 _packet_start:
+	call display_clear
 	ld a, SERIAL_STATE_PACKET
 	ld [wSerialState], a
 	jp packet_init
 
 
 _blaster_start:
+	call display_clear
 	ld a, SERIAL_STATE_BLASTER
 	ld [wSerialState], a
 	call serial_blaster_start
@@ -198,7 +211,7 @@ _state_update:
 	cp SERIAL_STATE_INIT :: jr z, .update_init
 	cp SERIAL_STATE_HANDSHAKE :: jr z, .update_hshk
 	cp SERIAL_STATE_PACKET :: jr z, .update_packet
-	cp SERIAL_STATE_BLASTER :: jr z, .update_blaster
+	cp SERIAL_STATE_BLASTER :: jp z, serial_blaster_update
 	ret
 .update_init:
 	bit PADB_A, b :: jr nz, _join
@@ -206,11 +219,39 @@ _state_update:
 	ret
 .update_hshk:
 	call _process_input_hshk
+
+	ld a, 1
+	call display_statln_start
+	push bc
+	call draw_hshk
+	pop bc
+	call display_clear_to
+
 	ret
 .update_packet:
 	call _process_input_packet
-	ret
-.update_blaster:
+
+	ld a, 1
+	call display_statln_start
+	push bc
+	call draw_packet_sys
+	pop bc
+	call display_clear_to
+
+	ld a, 2
+	call display_statln_start
+	ld a, "^tx^" :: ld [hl+], a
+	ld c, PKT_DATA_SZ
+	ld de, _packet_tx
+	call draw_packet_buffer
+
+	ld a, 3
+	call display_statln_start
+	ld a, "^rx^" :: ld [hl+], a
+	ld c, PKT_DATA_SZ
+	ld de, _packet_rx
+	call draw_packet_buffer
+
 	ret
 
 
@@ -303,8 +344,13 @@ def BLAST_HOST equ $FA
 def BLAST_GUEST equ $81
 
 section "wSerialBlaster", wram0
-_count: db
-_errors: db
+_div_ok: db
+_raw_ok: db
+_count_ok: db
+_div_error: db
+_raw_error: db
+_count_error: db
+_count_timeout: db
 
 
 section "SerialBlaster", rom0
@@ -313,15 +359,95 @@ serial_blaster_start::
 	ld a, low(_on_xfer_end) :: ld [wSerioOnXferEnd + 0], a
 	ld a, high(_on_xfer_end) :: ld [wSerioOnXferEnd + 1], a
 	xor a
-	ld [_count], a
-	ld [_errors], a
-	jr _start_next_xfer
+	ld [_count_ok], a
+	ld [_count_error], a
+	ld [_count_timeout], a
+	ld a, 8
+	ld [_div_ok], a
+	ld [_raw_ok], a
+	ld a, 2
+	ld [_div_error], a
+	ld [_raw_error], a
+	jp _start_next_xfer
+
+
+; @param B: keys pressed
+serial_blaster_update::
+	call _blaster_input
+
+	ld a, 1
+	call display_statln_start
+	push bc
+;	ld a, "B" :: ld [hl+], a
+;	ld a, "l" :: ld [hl+], a
+;	ld a, "a" :: ld [hl+], a
+;	ld a, "s" :: ld [hl+], a
+;	ld a, "t" :: ld [hl+], a
+;	ld a, "e" :: ld [hl+], a
+;	ld a, "r" :: ld [hl+], a
+	ld a, "^yes^" :: ld [hl+], a
+	ld a, [_div_ok] :: ld b, a :: call utile_print_h8
+	ld a, ":" :: ld [hl+], a
+	ld a, [_count_ok] :: ld b, a :: call utile_print_h8
+	ld a, " " :: ld [hl+], a
+	ld a, " " :: ld [hl+], a
+	ld a, "^no^" :: ld [hl+], a
+	ld a, [_div_error] :: ld b, a :: call utile_print_h8
+	ld a, ":" :: ld [hl+], a
+	ld a, [_count_error] :: ld b, a :: call utile_print_h8
+	ld a, " " :: ld [hl+], a
+	ld a, " " :: ld [hl+], a
+	ld a, "T" :: ld [hl+], a
+	ld a, [_count_timeout] :: ld b, a :: call utile_print_h8
+	pop bc
+	call display_clear_to
+
+	ret
+
+
+; @param B: keys pressed
+_blaster_input:
+	;    UP/DOWN: adjust (+/-) OK divider
+	; RIGHT/LEFT: adjust (+/-) ERROR divider
+	;     SELECT: reset counts
+	bit PADB_UP, b
+	jr z, :+
+	ld a, [_div_ok]
+	rlca
+	ld [_div_ok], a
+:
+	bit PADB_DOWN, b
+	jr z, :+
+	ld a, [_div_ok]
+	rrca
+	ld [_div_ok], a
+:
+	bit PADB_RIGHT, b
+	jr z, :+
+	ld a, [_div_error]
+	rlca
+	ld [_div_error], a
+:
+	bit PADB_LEFT, b
+	jr z, :+
+	ld a, [_div_error]
+	rrca
+	ld [_div_error], a
+:
+	bit PADB_SELECT, b
+	jr z, :+
+	xor a
+	ld [_count_ok], a
+	ld [_count_error], a
+	ld [_count_timeout], a
+:
+	ret
 
 
 _on_xfer_end:
 	ldh a, [hSerStatus]
 	bit SIOSTB_XFER_TIMEOUT, a
-	jr nz, .error
+	jr nz, _timeout
 	ld b, BLAST_HOST
 	ld a, [wSerConfig]
 	and SERIO_CFGF_HOST
@@ -330,17 +456,27 @@ _on_xfer_end:
 :
 	ldh a, [hSerRx]
 	cp b
-	jr z, _start_next_xfer
-.error:
-	ld hl, _count
-	ld a, $FF
-	ld [hl+], a
-	inc [hl]
+	jr z, _ok
 
+_error:
+	ld a, [_div_ok] :: ld [_raw_ok], a
+	ld hl, _raw_error :: dec [hl]
+	jr nz, _start_next_xfer
+	ld a, [_div_error] :: ld [hl], a
+	ld hl, _count_error :: inc [hl]
+	jr _start_next_xfer
+_timeout:
+	ld a, [_div_ok] :: ld [_raw_ok], a
+	ld a, [_div_error] :: ld [_raw_error], a
+	ld hl, _count_timeout :: inc [hl]
+	jr _start_next_xfer
+_ok:
+	ld a, [_div_error] :: ld [_raw_error], a
+	ld hl, _raw_ok :: dec [hl]
+	jr nz, _start_next_xfer
+	ld a, [_div_ok] :: ld [hl], a
+	ld hl, _count_ok :: inc [hl]
 _start_next_xfer:
-	ld hl, _count
-	inc [hl]
-
 	ld b, BLAST_GUEST
 	ld a, [wSerConfig]
 	and SERIO_CFGF_HOST
@@ -366,10 +502,14 @@ irq_timer:
 section "SerialDemo/TimerThing", rom0
 
 timer_enable::
+;	ld a, $FF ; 4096Hz / 1 = 4096Hz
+;	ld a, $FE ; 4096Hz / 2 = 2048Hz
+;	ld a, $FD ; 4096Hz / 3 ~ 1365Hz
+	ld a, $FC ; 4096Hz / 4 = 1024Hz
+;	ld a, $F8 ; 4096Hz / 8 =  512Hz
+	ldh [rTMA], a
 	ld a, %100
 	ldh [rTAC], a
-	ld a, $FE ; 4096Hz / 2 = 2048Hz
-	ldh [rTMA], a
 	ldh a, [rIE]
 	or IEF_TIMER
 	ldh [rIE], a

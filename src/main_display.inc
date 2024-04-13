@@ -26,6 +26,8 @@ _collection_display_buffer: ds COLLECTION_MAX_COUNT * COLLDISP_ITEM_WIDTH
 _collection:: ds COLLECTION_MAX_COUNT * COLLITEM_SIZE
 _collection_count:: db
 
+_statln_enable_0: db
+_statln_changed_0: db
 
 section "MainDisplay", rom0
 
@@ -63,49 +65,79 @@ collection_append::
 	ret
 
 
-redraw:
-	ld hl, _statln
-	call draw_statln_serio
+display_statln_start::
+	dec a
+	jr z, .line1
+	dec a
+	jr z, .line2
+	dec a
+	jr z, .line3
+	dec a
+	jr z, .line4
+.line0
+	ld b, $01
+	ld a, [_statln_enable_0]
+	or b
+	ld [_statln_enable_0], a
+	ld a, [_statln_changed_0]
+	or b
+	ld [_statln_changed_0], a
+	ld hl, _statln.line0
+	ld bc, _statln.line0 + STATLN_LINE_LEN
+	ret
+.line1
+	ld b, $02
+	ld a, [_statln_enable_0]
+	or b
+	ld [_statln_enable_0], a
+	ld a, [_statln_changed_0]
+	or b
+	ld [_statln_changed_0], a
+	ld hl, _statln.line1
+	ld bc, _statln.line1 + STATLN_LINE_LEN
+	ret
+.line2
+	ld b, $04
+	ld a, [_statln_enable_0]
+	or b
+	ld [_statln_enable_0], a
+	ld a, [_statln_changed_0]
+	or b
+	ld [_statln_changed_0], a
+	ld hl, _statln.line2
+	ld bc, _statln.line2 + STATLN_LINE_LEN
+	ret
+.line3
+	ld b, $08
+	ld a, [_statln_enable_0]
+	or b
+	ld [_statln_enable_0], a
+	ld a, [_statln_changed_0]
+	or b
+	ld [_statln_changed_0], a
+	ld hl, _statln.line3
+	ld bc, _statln.line3 + STATLN_LINE_LEN
+	ret
+.line4
+	ld b, $10
+	ld a, [_statln_enable_0]
+	or b
+	ld [_statln_enable_0], a
+	ld a, [_statln_changed_0]
+	or b
+	ld [_statln_changed_0], a
+	ld hl, _statln.line4
+	ld bc, _statln.line4 + STATLN_LINE_LEN
+	ret
 
-	ld bc, _statln.line1
-	ld d, STATLN_BG_CHR
-	call _clear_to
-	call draw_hshk
 
-	ld bc, _statln.line2
-	ld d, STATLN_BG_CHR
-	call _clear_to
-	call draw_packet_sys
-
-	ld bc, _statln.line3
-	ld d, STATLN_BG_CHR
-	call _clear_to
-	ld a, "^tx^" :: ld [hl+], a
-	ld c, PKT_DATA_SZ
-	ld de, _packet_tx
-	call draw_packet_buffer
-
-	ld bc, _statln.line4
-	ld d, STATLN_BG_CHR
-	call _clear_to
-	ld a, "^rx^" :: ld [hl+], a
-	ld c, PKT_DATA_SZ
-	ld de, _packet_rx
-	call draw_packet_buffer
-
-;	ld bc, _statln.line4
-;	ld d, STATLN_BG_CHR
-;	call _clear_to
-;	call draw_statln_sc_sb
-
-	; ld hl, _collection_display_buffer
-	; call draw_collection
-
+display_flush::
 	call flush_statln
 	; call flush_collection
 	ret
 
 
+display_clear::
 clear_statln:
 	ld hl, _statln
 	ld c, STATLN_LINE_COUNT * STATLN_LINE_LEN
@@ -114,6 +146,8 @@ clear_statln:
 	ld [hl+], a
 	dec c
 	jr nz, :-
+	ld a, $FF
+	ld [_statln_changed_0], a
 	ret
 
 
@@ -144,6 +178,11 @@ draw_statln_serio:
 	ld c, a
 	jp fmt_txrx
 
+
+; @param HL: &dest
+; @param BC: &end
+display_clear_to::
+	ld d, STATLN_BG_CHR
 
 ; @param D: value
 ; @param HL: &dest
@@ -273,26 +312,56 @@ draw_coll_item:
 
 
 flush_statln:
+	ld a, [_statln_changed_0]
+.line0
+	bit 0, a
+	jr z, .line1
 	ld hl, STATLN_DEST
 	ld de, _statln
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+
+	ld a, [_statln_changed_0]
+.line1
+	bit 1, a
+	jr z, .line2
 	ld hl, STATLN_DEST + 32 * 1
 	ld de, _statln + STATLN_LINE_LEN * 1
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+
+	ld a, [_statln_changed_0]
+.line2
+	bit 2, a
+	jr z, .line3
 	ld hl, STATLN_DEST + 32 * 2
 	ld de, _statln + STATLN_LINE_LEN * 2
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+
+	ld a, [_statln_changed_0]
+.line3
+	bit 3, a
+	jr z, .line4
 	ld hl, STATLN_DEST + 32 * 3
 	ld de, _statln + STATLN_LINE_LEN * 3
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+
+	ld a, [_statln_changed_0]
+.line4
+	bit 4, a
+	jr z, .line5
 	ld hl, STATLN_DEST + 32 * 4
 	ld de, _statln + STATLN_LINE_LEN * 4
 	ld b, STATLN_LINE_LEN
 	call bgmap_buffer_flush
+
+.line5
+
+.done
+	xor a
+	ld [_statln_changed_0], a
 	ret
 
 
