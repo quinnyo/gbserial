@@ -133,6 +133,10 @@ serialdemo_init:
 	ld [wTick + 1], a
 	ld [wPktGen], a
 
+	ld a, 32
+	ld [wSerTransferTimeout], a
+	call timer_enable
+
 	ret
 
 
@@ -179,12 +183,12 @@ _packet_start:
 	ld a, SERIAL_STATE_PACKET
 	ld [wSerialState], a
 	jp packet_init
-	ret
 
 
 _blaster_start:
 	ld a, SERIAL_STATE_BLASTER
 	ld [wSerialState], a
+	call serial_blaster_start
 	ret
 
 
@@ -202,22 +206,11 @@ _state_update:
 	ret
 .update_hshk:
 	call _process_input_hshk
-	call serio_tick
 	ret
 .update_packet:
 	call _process_input_packet
-	call serio_tick
 	ret
 .update_blaster:
-	ldh a, [hSerStatus]
-	bit SIOSTB_QUEUE, a
-	jr nz, :+
-	ldh a, [hSerTx]
-	add b
-	call serio_transmit
-	call serio_continue
-:
-	call serio_tick
 	ret
 
 
@@ -300,6 +293,100 @@ _build_packet_gen:
 	inc a
 	ld [wPktGen], a
 	jp packet_tx_finalise
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+def BLAST_HOST equ $FA
+def BLAST_GUEST equ $81
+
+section "wSerialBlaster", wram0
+_count: db
+_errors: db
+
+
+section "SerialBlaster", rom0
+
+serial_blaster_start::
+	ld a, low(_on_xfer_end) :: ld [wSerioOnXferEnd + 0], a
+	ld a, high(_on_xfer_end) :: ld [wSerioOnXferEnd + 1], a
+	xor a
+	ld [_count], a
+	ld [_errors], a
+	jr _start_next_xfer
+
+
+_on_xfer_end:
+	ldh a, [hSerStatus]
+	bit SIOSTB_XFER_TIMEOUT, a
+	jr nz, .error
+	ld b, BLAST_HOST
+	ld a, [wSerConfig]
+	and SERIO_CFGF_HOST
+	jr z, :+
+	ld b, BLAST_GUEST
+:
+	ldh a, [hSerRx]
+	cp b
+	jr z, _start_next_xfer
+.error:
+	ld hl, _count
+	ld a, $FF
+	ld [hl+], a
+	inc [hl]
+
+_start_next_xfer:
+	ld hl, _count
+	inc [hl]
+
+	ld b, BLAST_GUEST
+	ld a, [wSerConfig]
+	and SERIO_CFGF_HOST
+	jr z, :+
+	ld b, BLAST_HOST
+:
+	ld a, b
+	call serio_transmit
+	jp serio_continue
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+include "hw.inc"
+
+
+section "irq/timer", rom0[$50]
+irq_timer:
+	jp irq_timer_handler
+
+
+section "SerialDemo/TimerThing", rom0
+
+timer_enable::
+	ld a, %100
+	ldh [rTAC], a
+	ld a, $FE ; 4096Hz / 2 = 2048Hz
+	ldh [rTMA], a
+	ldh a, [rIE]
+	or IEF_TIMER
+	ldh [rIE], a
+	ret
+
+
+irq_timer_handler:
+	push af
+	push bc
+	push de
+	push hl
+	call serio_tick
+	pop hl
+	pop de
+	pop bc
+	pop af
+	reti
 
 
 ;
