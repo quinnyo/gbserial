@@ -117,12 +117,14 @@ wSerialState: db
 wTick: dw
 wPktGen: db
 
+_last_draw_essentials_sec: db
 
 section "serialdemo", rom0
 
 serialdemo_init:
 	call serio_init
 	call handshake_init
+	call serial_clock_init
 
 	ld a, SERIAL_STATE_HANDSHAKE
 	ld [wSerialState], a
@@ -131,6 +133,8 @@ serialdemo_init:
 	ld [wTick + 0], a
 	ld [wTick + 1], a
 	ld [wPktGen], a
+	ld a, $FF
+	ld [_last_draw_essentials_sec], a
 
 	ld a, 32
 	ld [wSerTransferTimeout], a
@@ -144,7 +148,20 @@ serialdemo_update:
 	call _process_input
 	call _state_update
 
-	xor a
+	ld a, [_last_draw_essentials_sec] :: ld b, a
+	ld a, [wSerialClock.seconds]
+	cp b
+	jr z, :+
+		ld [_last_draw_essentials_sec], a
+		xor a
+		call display_statln_start
+		push bc
+		call draw_essentials
+		pop bc
+		call display_clear_to
+:
+
+	ld a, 1
 	call display_statln_start
 	push bc
 	call draw_statln_serio
@@ -220,7 +237,7 @@ _state_update:
 .update_hshk:
 	call _process_input_hshk
 
-	ld a, 1
+	ld a, 2
 	call display_statln_start
 	push bc
 	call draw_hshk
@@ -231,21 +248,21 @@ _state_update:
 .update_packet:
 	call _process_input_packet
 
-	ld a, 1
+	ld a, 2
 	call display_statln_start
 	push bc
 	call draw_packet_sys
 	pop bc
 	call display_clear_to
 
-	ld a, 2
+	ld a, 3
 	call display_statln_start
 	ld a, "^tx^" :: ld [hl+], a
 	ld c, PKT_DATA_SZ
 	ld de, _packet_tx
 	call draw_packet_buffer
 
-	ld a, 3
+	ld a, 4
 	call display_statln_start
 	ld a, "^rx^" :: ld [hl+], a
 	ld c, PKT_DATA_SZ
@@ -380,7 +397,7 @@ serial_blaster_start::
 serial_blaster_update::
 	call _blaster_input
 
-	ld a, 1
+	ld a, 2
 	call display_statln_start
 	push bc
 ;	ld a, "B" :: ld [hl+], a
@@ -527,12 +544,66 @@ irq_timer_handler:
 	push de
 	push hl
 	call serio_tick
+
+	; NOTE: this is hardcoded to "work" (as it does) with an interrupt frequency of 1kHz.
+	ld hl, wSerialClock.ticks
+	inc [hl] ; ticks++
+	jr nz, :+
+		ld a, 256 - SERIAL_CLOCK_TICKS :: ld [hl+], a
+		; xor a ; 256 ticks = 1 period
+		; ld [hl+], a
+		inc [hl] ; periods++
+		jr nz, :+
+			ld a, 256 - SERIAL_CLOCK_PERIODS :: ld [hl+], a
+			; ld a, 256 - 4 ; 4 periods = 1 second
+			; ld [hl+], a
+			inc [hl] ; seconds++
+			jr nz, :+
+				ld a, 256 - SERIAL_CLOCK_SECONDS :: ld [hl+], a
+				; ld a, 256 - 60 ; 60 seconds = 1 minute
+				; ld [hl+], a
+				inc [hl] ; minutes++
+:
 	pop hl
 	pop de
 	pop bc
 	pop af
 	reti
 
+
+def SERIAL_CLOCK_TICKS   equ 256
+def SERIAL_CLOCK_PERIODS equ 4
+def SERIAL_CLOCK_SECONDS equ 60
+
+section "wSerialClock", wram0
+; Time keeping in serial time.
+wSerialClock::
+	.ticks:: db
+	.periods:: db
+	.seconds:: db
+	.minutes:: db
+
+
+section "SerialClock", rom0
+
+serial_clock_init::
+	ld a, 256 - SERIAL_CLOCK_TICKS :: ld [wSerialClock.ticks], a
+	ld a, 256 - SERIAL_CLOCK_PERIODS :: ld [wSerialClock.periods], a
+	ld a, 256 - SERIAL_CLOCK_SECONDS :: ld [wSerialClock.seconds], a
+	xor a :: ld [wSerialClock.minutes], a
+	ret
+
+
+; @param HL: &dest
+; @mut: AF, B, HL
+draw_serial_time::
+	ld a, [wSerialClock.minutes] :: ld b, a
+	call utile_print_h8
+	ld a, ":" :: ld [hl+], a
+	ld a, [wSerialClock.seconds]
+	sub 256 - SERIAL_CLOCK_SECONDS
+	ld b, a
+	jp utile_print_h8
 
 ;
 ; vim:ft=rgbasm

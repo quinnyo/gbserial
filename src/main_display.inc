@@ -152,6 +152,14 @@ clear_statln:
 
 
 ; @param HL: &dest
+draw_essentials:
+	ld a, "[" :: ld [hl+], a
+	call draw_serial_time
+	ld a, "]" :: ld [hl+], a
+	ret
+
+
+; @param HL: &dest
 draw_statln_serio:
 	ldh a, [hSerStatus]
 	call fmt_serio_status
