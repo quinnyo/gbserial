@@ -161,15 +161,35 @@ draw_essentials:
 
 ; @param HL: &dest
 draw_statln_serio:
-	ldh a, [hSerStatus]
-	call fmt_serio_status
-	ldh a, [hSerStatus]
-	bit SIOSTB_ENABLE, a
-	ret z
-
-	ld a, STATLN_BG_CHR
+	ld a, [wSerConfig] :: ld b, a
+	ld a, "H"
+	bit SERIO_CFGB_ROLE, b
+	jr nz, :+
+	ld a, "g"
+:
 	ld [hl+], a
 
+	ldh a, [hSerStatus]
+	call fmt_serio_status
+
+	ld a, STATLN_BG_CHR :: ld [hl+], a
+
+	ldh a, [hSerTx] :: ld b, a
+	ldh a, [hSerRx] :: ld c, a
+	call fmt_txrx
+
+	ld a, STATLN_BG_CHR :: ld [hl+], a
+
+	ld a, [wSerConfig]
+	and SERIO_CFGF_HOST
+	jr z, .timeout
+	; HOST: xfer end delay
+	ld a, [wSerHostXferEndDelay] :: ld b, a
+	call utile_print_h8
+	ret
+
+.timeout:
+	; GUEST: timeout
 	ldh a, [hTimeoutTicks]
 	and a
 	jr nz, :+
@@ -177,14 +197,8 @@ draw_statln_serio:
 :
 	ld b, a
 	call utile_print_h8
-	ld a, STATLN_BG_CHR
-	ld [hl+], a
-
-	ldh a, [hSerTx]
-	ld b, a
-	ldh a, [hSerRx]
-	ld c, a
-	jp fmt_txrx
+	ld a, STATLN_BG_CHR :: ld [hl+], a
+	ret
 
 
 ; @param HL: &dest

@@ -35,6 +35,8 @@ wSerConfig:: db
 wSerTransferTimeout:: db
 ; Transfer end event callback address. Set to $FFFF to disable.
 wSerioOnXferEnd:: dw
+; Post-transfer delay duration. Host only.
+wSerHostXferEndDelay:: db
 
 
 section "Serio", rom0
@@ -48,6 +50,7 @@ serio_init::
 	ld a, $99 :: ldh [hSerRx], a
 	xor a :: ldh [hTimeoutTicks], a :: ldh [hDelay], a
 	ld a, SIOSTF_DEFAULT :: ldh [hSerStatus], a
+	ld a, SERIO_HOST_XFER_END_DELAY_DEFAULT :: ld [wSerHostXferEndDelay], a
 	ret
 
 
@@ -95,7 +98,7 @@ serio_tick::
 
 	; if transfer ended, do callback
 	bit SIOSTB_XFER_ENDED, a
-	jp nz, _on_xfer_end_dispatch
+	jp nz, _on_xfer_end
 
 	IsTransferActive
 	jr nz, _do_xfer_queue ; transfer not active, update queue
@@ -164,7 +167,14 @@ _do_timeout:
 	ret
 
 
-_on_xfer_end_dispatch:
+_on_xfer_end:
+	; Delay HOST after every transfer to mitigate phase/sync errors.
+	IsExternalClock
+	jr z, :+
+	ld a, [wSerHostXferEndDelay]
+	ldh [hDelay], a
+:
+	; invoke transfer end callback handler
 	ld hl, wSerioOnXferEnd
 	ld a, [hl+]
 	ld h, [hl]

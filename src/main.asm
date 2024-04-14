@@ -179,8 +179,33 @@ serialdemo_update:
 
 ; @param B: keys pressed
 _process_input:
-	bit PADB_B, b
-	jr nz, _reset
+	ldh a, [hKeys]
+	bit PADB_SELECT, a
+	jr nz, :+
+		bit PADB_B, b
+		jr nz, _reset
+		ret
+:
+	call .select
+	ld b, 0
+	ret
+.select
+	ld a, [wSerConfig]
+	bit SERIO_CFGB_ROLE, a
+	jr z, .guest
+	bit PADB_UP, b
+	jr nz, .next_xfer_end_delay
+	ret
+.guest
+	ret
+.next_xfer_end_delay
+	ld a, [wSerHostXferEndDelay]
+	inc a
+	cp 4
+	jr c, :+
+	ld a, 0
+:
+	ld [wSerHostXferEndDelay], a
 	ret
 
 
@@ -282,7 +307,7 @@ _process_input_hshk:
 		ret
 :
 	bit PADB_A, b :: jp nz, _packet_start
-	bit PADB_SELECT, b :: jp nz, _blaster_start
+	bit PADB_RIGHT, b :: jp nz, _blaster_start
 	ret
 
 
@@ -456,7 +481,7 @@ _blaster_input:
 	rrca
 	ld [_div_error], a
 :
-	bit PADB_SELECT, b
+	bit PADB_START, b
 	jr z, :+
 	xor a
 	ld [_count_ok], a

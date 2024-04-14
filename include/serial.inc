@@ -4,6 +4,7 @@ def SERIAL_INC equ 1
 include "hw.inc"
 
 def SERIO_TIMEOUT_TICKS_DEFAULT equ 8
+def SERIO_HOST_XFER_END_DELAY_DEFAULT equ 1
 
 /* SERIO CONFIG */
 

@@ -23,7 +23,6 @@ endm
 
 section "fmt_debug_info_data", rom0
 strDown: StrDB "down"
-strQueue: StrDB " Q:"
 strIdle: StrDB "idle"
 strActive: StrDB "actv"
 strDone: StrDB "done"
@@ -53,30 +52,23 @@ section "fmt_debug_info", rom0
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
 fmt_serio_status::
-	ld c, $FF ; str terminator
-	ld de, strDown :: bit SIOSTB_ENABLE, a :: jp z, memcpy_terminated
-
-	ld b, a ; safe keeping
 	call fmt_serio_xfer_status
 
-	ld de, strQueue
-	call memcpy_terminated
-	ld a, "0"
+	ld a, "."
 	bit SIOSTB_QUEUE, b
 	jr z, :+
-	ld a, "1"
+	ld a, "Q"
 :
 	ld [hl+], a
-	ld a, " "
-	ld a, b
 	ret
 
 
 ; @param A: value
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
-fmt_serio_xfer_status::
+fmt_serio_xfer_status:
 	ld c, $FF ; str terminator
+	ld de, strDown :: bit SIOSTB_ENABLE, a :: jp z, memcpy_terminated
 	and SIOSTF_XFER_STATUS
 	ld de, strIdle :: cp SIOSTF_XFER_IDLE :: jp z, memcpy_terminated
 	ld de, strActive :: cp SIOSTF_XFER_ACTIVE :: jp z, memcpy_terminated
@@ -88,12 +80,12 @@ fmt_serio_xfer_status::
 ; @param B: Tx value
 ; @param C: Rx value
 fmt_txrx::
-	ld a, "t"
+	ld a, "^tx^"
 	ld [hl+], a
 	call utile_print_h8
 	ld a, " "
 	ld [hl+], a
-	ld a, "r"
+	ld a, "^rx^"
 	ld [hl+], a
 	ld b, c
 	jp utile_print_h8
