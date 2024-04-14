@@ -343,10 +343,15 @@ _build_packet_gen:
 def BLAST_HOST equ $FA
 def BLAST_GUEST equ $81
 
+def SERIAL_BLASTER_DIV_OK_DEFAULT    equ $80
+def SERIAL_BLASTER_DIV_ERROR_DEFAULT equ $01
+
 section "wSerialBlaster", wram0
+; Number of expected values received (consecutively) to count as one OK.
 _div_ok: db
 _raw_ok: db
 _count_ok: db
+; Number of unexpected values received (consecutively) to count as one ERROR.
 _div_error: db
 _raw_error: db
 _count_error: db
@@ -362,10 +367,10 @@ serial_blaster_start::
 	ld [_count_ok], a
 	ld [_count_error], a
 	ld [_count_timeout], a
-	ld a, 8
+	ld a, SERIAL_BLASTER_DIV_OK_DEFAULT
 	ld [_div_ok], a
 	ld [_raw_ok], a
-	ld a, 2
+	ld a, SERIAL_BLASTER_DIV_ERROR_DEFAULT
 	ld [_div_error], a
 	ld [_raw_error], a
 	jp _start_next_xfer
