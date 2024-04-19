@@ -136,7 +136,7 @@ serialdemo_init:
 	ld a, $FF
 	ld [_last_draw_essentials_sec], a
 
-	ld a, 32
+	ld a, 255
 	ld [wSerTransferTimeout], a
 	call timer_enable
 
@@ -456,7 +456,7 @@ serial_blaster_update::
 _blaster_input:
 	;    UP/DOWN: adjust (+/-) OK divider
 	; RIGHT/LEFT: adjust (+/-) ERROR divider
-	;     SELECT: reset counts
+	;      START: reset counts
 	bit PADB_UP, b
 	jr z, :+
 	ld a, [_div_ok]
