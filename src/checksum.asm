@@ -2,6 +2,7 @@
 section "Checksum", rom0
 
 ; Calculate a 1 byte checksum from the values in a block of memory.
+; The length of the block (value in C) is included in the sum.
 ; Check data integrity against a precalculated checksum by including
 ; the sum within the data block. If the result is zero, it's a match.
 ; The value of the checksum must be zero for the initial calculation.
@@ -13,10 +14,7 @@ Checksum8::
 	ld a, c
 	and a
 	ret z
-	sub c
-	; include the length value
-	sub c
-	dec a
+	; include the length value (it's already in A)
 :
 	sub [hl]
 	inc hl
