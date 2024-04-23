@@ -86,6 +86,7 @@ handshake_start::
 	jr _tx_first
 
 
+; @mut: AF, HL
 handshake_host::
 	ld a, [wSerConfig]
 	or SERIO_CFGF_HOST
@@ -93,6 +94,7 @@ handshake_host::
 	jr handshake_start
 
 
+; @mut: AF, HL
 handshake_join::
 	ld a, [wSerConfig]
 	res SERIO_CFGB_ROLE, a
@@ -108,12 +110,14 @@ handshake_abort::
 	jp serio_disable
 
 
+; @mut: AF, HL
 handshake_tick::
 	call serio_tick
 	ret
 
 
 ; Serio RX handler for handshake
+; @mut: AF, B
 _hshk_on_xfer_end:
 handshake_rx::
 	; call serio_continue
@@ -140,6 +144,7 @@ handshake_rx::
 
 
 ; @param A: current hshk count
+; @mut: AF, B
 _tx_next:
 	dec a
 	ld [wHshkCount], a
@@ -161,6 +166,7 @@ _tx:
 	jp serio_transmit
 
 
+; @mut: AF, B
 _tx_retry:
 	; do retry limit
 	ld a, [wHshkRetries]
@@ -175,6 +181,7 @@ _tx_retry:
 	; FALLTHROUGH
 
 ; transmit announce code as A if host, or B if not
+; @mut: AF, B
 _tx_first:
 	ld a, HSHK_COUNT_REQUIRED
 	ld [wHshkCount], a ; no progress

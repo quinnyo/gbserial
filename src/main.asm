@@ -549,11 +549,11 @@ irq_timer:
 section "SerialDemo/TimerThing", rom0
 
 timer_enable::
-;	ld a, $FF ; 4096Hz / 1 = 4096Hz
-;	ld a, $FE ; 4096Hz / 2 = 2048Hz
-;	ld a, $FD ; 4096Hz / 3 ~ 1365Hz
-	ld a, $FC ; 4096Hz / 4 = 1024Hz
-;	ld a, $F8 ; 4096Hz / 8 =  512Hz
+;	ld a, $FF ; 4096 /   1 = 4096 Hz
+;	ld a, $FE ; 4096 /   2 = 2048 Hz
+	ld a, $FC ; 4096 /   4 = 1024 Hz
+;	ld a, $F8 ; 4096 /   8 =  512 Hz
+;	ld a, $00 ; 4096 / 256 =   16 Hz
 	ldh [rTMA], a
 	ld a, %100
 	ldh [rTAC], a
@@ -570,7 +570,7 @@ irq_timer_handler:
 	push hl
 	call serio_tick
 
-	; NOTE: this is hardcoded to "work" (as it does) with an interrupt frequency of 1kHz.
+	; NOTE: this is hardcoded to "work" (as it does) with an interrupt frequency of 1024 Hz.
 	ld hl, wSerialClock.ticks
 	inc [hl] ; ticks++
 	jr nz, :+
