@@ -101,52 +101,62 @@ serio_tick::
 	jp nz, _on_xfer_end
 
 	IsTransferActive
-	jr nz, _do_xfer_queue ; transfer not active, update queue
+	jr nz, SioStartQueuedTransfer ; transfer not active, process queue
 
 	; transfer is active, do timeout on guest
 	IsExternalClock
-	ret nz ; active transfer on the host, nothing to do
-	call _do_timeout
+	call z, _do_timeout
 	ret
 
 
-; If the delay time is non-zero, tick the delay timer.
-; If the delay time is zero, process the queue.
-_do_xfer_queue:
-	ldh a, [hDelay]
-	and a
-	jr nz, .delay_tick ; delay > 0
-
-	; update SC from config
-	ld a, [wSerConfig]
-assert SCF_SOURCE == SERIO_CFGF_HOST
-	and SCF_SOURCE
-	ldh [rSC], a
-	ld b, a
-	; restart timeout duration for GUEST
-	bit SCB_SOURCE, b
-	jr nz, :+
-	ld a, [wSerTransferTimeout]
-	ldh [hTimeoutTicks], a
-:
-
+SioStartQueuedTransfer:
 	; check QUEUE flag
 	ldh a, [hSerStatus]
 	bit SIOSTB_QUEUE, a
 	ret z ; no QUEUE
-	ld a, SIOSTF_XFER_ACTIVE | SIOSTF_ENABLED
-	ldh [hSerStatus], a
-	; start transfer
+
+	ldh a, [hDelay]
+	and a
+	jr z, :+
+		dec a
+		ldh [hDelay], a
+		ret
+:
+	ld a, [wSerConfig]
+	ld c, a
 	ldh a, [hSerTx]
-	ldh [rSB], a
-	ld a, $80
-	or b
-	ldh [rSC], a
+	ld b, a
+	call SioStartTransfer
+
 	ret
 
-.delay_tick:
-	dec a
-	ldh [hDelay], a
+
+; Start a serial port transfer immediately.
+; @param B: data byte to send
+; @param C: SC flags (only clock source is considered)
+; @mut: AF
+SioStartTransfer::
+	; set the clock source (do this first & separately from starting the transfer!)
+	ld a, c
+	and SCF_SOURCE
+	ldh [rSC], a
+	; load the value to send
+	ld a, b
+	ldh [rSB], a
+	; start the transfer
+	ldh a, [rSC]
+	or SCF_START
+	ldh [rSC], a
+
+	; reset timeout (on externally clocked device)
+	bit SCB_SOURCE, c
+	jr nz, :+
+	ld a, [wSerTransferTimeout]
+	ldh [hTimeoutTicks], a
+:
+	ld a, SIOSTF_XFER_ACTIVE | SIOSTF_ENABLED
+	ldh [hSerStatus], a
+
 	ret
 
 
