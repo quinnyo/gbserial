@@ -262,32 +262,21 @@ DEF SIOTEST_XFER_COUNT EQU 16
 SECTION "SerialDemo/SioTest State", WRAM0
 
 wSioTestFlippy: db
-wSioTestWait: db
 
-; wSioTestBufferTx: ds SIOTEST_BUFFER_SIZE
 wSioTestBufferRx: ds SIOTEST_BUFFER_SIZE
 
 SECTION "SerialDemo/SioTest Impl", ROM0
 
 SioTestDataA:
-FOR I, 16
-	db I
-ENDR
-	db "0123456789ABCDEF"
-	db "[OH GOD NO STOP]"
+	db "A short message!"
 
 SioTestDataB:
-FOR I, 16
-	db $80 + I
-ENDR
-	db "Hi (that is all)"
-	db "[STOP. GO BACK.]"
+	db "Bees == cute fyi"
 
 
 SioTestInit::
 	xor a
 	ld [wSioTestFlippy], a
-	ld [wSioTestWait], a
 	ld c, SIOTEST_BUFFER_SIZE
 	ld hl, wSioTestBufferRx
 :
@@ -298,6 +287,9 @@ SioTestInit::
 
 
 SioTestUpdate::
+	call SioTestDraw
+
+	; Start transfer (press A && not transferring)
 	ldh a, [hKeysPressed]
 	bit PADB_A, a
 	jr z, :+
@@ -310,40 +302,8 @@ SioTestUpdate::
 :
 	ret
 
-;	; A to skip wait
-;	ldh a, [hKeys]
-;	bit PADB_A, a
-;	jr nz, :+
-;	ld a, [wSioTestWait]
-;	and a
-;	jr z, :+
-;	dec a
-;	ld [wSioTestWait], a
-;	ret
-;:
-;	xor a
-;	ld [wSioTestWait], a
-
-;	ld a, [wSioState]
-;	cp SIO_XFER_FAILED
-;	jr nz, :+
-;	; press A to continue from failed
-;	ldh a, [hKeysPressed]
-;	bit PADB_A, a
-;	jr nz, SioTestStartThing
-;	ret
-;:
-;	; if not failed, wait for transfers to complete count
-;	ld a, [wSioCount]
-;	and a
-;	jr z, SioTestStartThing
-;	ret
-
 
 SioTestStartThing:
-	ld a, 240
-	ld [wSioTestWait], a
-
 	; set Rx pointer and transfer count
 	ld de, wSioTestBufferRx
 	ld hl, wSioRxPtr
@@ -372,6 +332,41 @@ SioTestStartThing:
 	; set count last
 	ld a, SIOTEST_XFER_COUNT
 	ld [wSioCount], a
+	ret
+
+
+SioTestDraw:
+	; draw Rx buffer
+	ld a, 3
+	call display_statln_start
+	push bc
+	ld a, "^rx^"
+	ld [hl+], a
+	ld a, " "
+	ld [hl+], a
+	ld a, "'"
+	ld [hl+], a
+	ld de, wSioTestBufferRx
+	ld c, SIOTEST_XFER_COUNT
+.loop
+	; stop early if we caught up to the Rx pointer
+	ld a, [wSioRxPtr + 1]
+	cp d
+	jr nz, :+
+	ld a, [wSioRxPtr + 0]
+	cp e
+	jr z, .loop_break
+:
+	ld a, [de]
+	inc de
+	ld [hl+], a
+	dec c
+	jr nz, .loop
+.loop_break
+	ld a, "'"
+	ld [hl+], a
+	pop bc
+	call display_clear_to
 	ret
 
 
