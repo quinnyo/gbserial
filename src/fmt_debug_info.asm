@@ -81,8 +81,10 @@ fmt_sio_config::
 ; @mut: AF, BC, DE, HL
 fmt_sio_state::
 	; { i_dle, S_tarted, ^yes^_ompleted, ^no^_ailed }
-	cp SIO_XFER_IDLE
+	cp SIO_IDLE
 	jr z, .idle
+	cp SIO_XFER_START
+	jr z, .started
 	cp SIO_XFER_STARTED
 	jr z, .started
 	cp SIO_XFER_COMPLETED
@@ -93,7 +95,7 @@ fmt_sio_state::
 	ld b, a
 	jp utile_print_h8
 .idle
-	ld a, "i"
+	ld a, "I"
 	ld [hl+], a
 	jr .end
 .started

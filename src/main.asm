@@ -265,6 +265,8 @@ wSioTestFlippy: db
 
 wSioTestBufferRx: ds SIOTEST_BUFFER_SIZE
 
+wSioTestRetries: db
+
 SECTION "SerialDemo/SioTest Impl", ROM0
 
 SioTestDataA:
@@ -287,6 +289,14 @@ SioTestInit::
 
 
 SioTestUpdate::
+	; speed up after first transfer
+	ld a, [wSioCount]
+	cp SIOTEST_XFER_COUNT
+	jr nc, :+
+	ld a, $FF
+	ldh [rTMA], a
+:
+
 	call SioTestDraw
 
 	; Start transfer (press A && not transferring)
@@ -304,6 +314,13 @@ SioTestUpdate::
 
 
 SioTestStartThing:
+	ld a, SIO_IDLE
+	ld [wSioState], a
+
+	; start slow
+	ld a, $00
+	ldh [rTMA], a
+
 	; set Rx pointer and transfer count
 	ld de, wSioTestBufferRx
 	ld hl, wSioRxPtr
@@ -329,9 +346,11 @@ SioTestStartThing:
 	ld [hl+], a
 	ld [hl], d
 
-	; set count last
+	; set count and request start
 	ld a, SIOTEST_XFER_COUNT
 	ld [wSioCount], a
+	ld a, SIO_XFER_START
+	ld [wSioState], a
 	ret
 
 

@@ -1,4 +1,4 @@
-include "hw.inc"
+INCLUDE "hw.inc"
 
 ; Duration of timeout period in ticks. (for externally clocked device)
 DEF SIO_TIMEOUT_TICKS EQU 240
@@ -10,28 +10,20 @@ DEF SIO_CONFIG_DEFAULT EQU 0
 EXPORT SIO_CONFIG_INTCLK
 
 ; SioStatus transfer state enum
-DEF SIO_XFER_IDLE      EQU $00
-DEF SIO_XFER_STARTED   EQU $01
-DEF SIO_XFER_COMPLETED EQU $02
-DEF SIO_XFER_FAILED    EQU $03
-;DEF SIO_XFER_ALL_THEM_I_MEAN_COMPLETED_ETC
-EXPORT SIO_XFER_IDLE, SIO_XFER_STARTED, SIO_XFER_COMPLETED, SIO_XFER_FAILED
-
-; Size in bytes of the data part of a packet
-DEF SIO_PACKET_DATA_SIZE EQU 8
+RSRESET
+DEF SIO_IDLE           RB 1
+DEF SIO_XFER_START     RB 1
+DEF SIO_XFER_STARTED   RB 1
+DEF SIO_XFER_COMPLETED RB 1
+DEF SIO_XFER_FAILED    RB 1
+EXPORT SIO_IDLE, SIO_XFER_START, SIO_XFER_STARTED, SIO_XFER_COMPLETED, SIO_XFER_FAILED
 
 
 SECTION "SioCore State", WRAM0
 ; Sio config flags
 wSioConfig:: db
-
 ; Sio state machine current state
 wSioState:: db
-
-; Timer state (as ticks remaining, expires at zero) for timeouts and delays.
-wSioTimer::
-wTimer: db
-
 ; Source address of next value to transmit
 wSioTxPtr:: dw
 ; Destination address of next received value
@@ -39,13 +31,17 @@ wSioRxPtr:: dw
 ; Number of transfers to perform (bytes to transfer)
 wSioCount:: db
 
+; Timer state (as ticks remaining, expires at zero) for timeouts and delays.
+wSioTimer::
+wTimer: db
+
 
 SECTION "SioCore Impl", ROM0
 
 SioInit::
 	ld a, SIO_CONFIG_DEFAULT
 	ld [wSioConfig], a
-	ld a, SIO_XFER_IDLE
+	ld a, SIO_IDLE
 	ld [wSioState], a
 	xor a
 	ld [wTimer], a
@@ -66,7 +62,7 @@ SioInit::
 
 SioTick::
 	ld a, [wSioState]
-	cp SIO_XFER_IDLE
+	cp SIO_XFER_START
 	jr z, SioProcessQueue
 	cp SIO_XFER_STARTED
 	jr z, .xfer_started
@@ -86,16 +82,6 @@ SioTick::
 	ld [wTimer], a
 	jr z, SioAbortTransfer
 	ret
-;.xfer_completed:
-;	ldh a, [rSC]
-;	and SCF_SOURCE
-;	jr z, SioProcessQueue
-;	; reset delay timer on internal clock
-;	ld a, SIO_CATCHUP_DELAY
-;	ld [wTimer], a
-;	jr SioProcessQueue
-;.xfer_failed:
-;	ret
 
 
 SioProcessQueue:
@@ -132,7 +118,6 @@ SioStartNextTransfer:
 
 ; Start a serial port transfer immediately.
 ; @param B: data byte to send
-;;;;;; @param C: SC flags (only clock source is considered)
 ; @mut: AF
 SioStartTransfer::
 	; set the clock source (do this first & separately from starting the transfer!)
@@ -166,30 +151,6 @@ SioAbortTransfer::
 	res SCB_START, a
 	ldh [rSC], a
 	ret
-
-
-;; Update the transfer timeout timer. Assumes that there is an active transfer.
-;; If the timer expires, the transfer is aborted and the FAILED state is entered.
-;SioMonitor:
-;	ld a, [wTimer]
-;	and a
-;	ret z ; timer == 0, timeout disabled
-;	dec a
-;	ld [wTimer], a
-;	jr z, SioAbortTransfer
-;	ret
-
-
-;_on_xfer_end:
-;	; invoke transfer end callback handler
-;	ld hl, wSerioOnXferEnd
-;	ld a, [hl+]
-;	ld h, [hl]
-;	ld l, a
-;	and h
-;	cp $FF ; handler == $FFFF --> disabled
-;	ret z
-;	jp hl
 
 
 SioSerialInterruptHandler:
@@ -248,50 +209,4 @@ SioSerialInterruptHandler:
 section "Serial Interrupt", rom0[$58]
 SerialInterrupt:
 	jp SioSerialInterruptHandler
-
-
-SECTION "SioPacket State", WRAM0
-
-wSioPacketTx::
-	.checksum:: db
-	.data:: ds SIO_PACKET_DATA_SIZE
-
-wSioPacketRx::
-	.checksum:: db
-	.data:: ds SIO_PACKET_DATA_SIZE
-
-; wSioPacketRemaining: db
-
-SECTION "SioPacket Impl", ROM0
-
-; Finalise the packet
-SioPacketDataReady::
-	ret
-
-
-
-
-
-
-/* ACTUALLY, THE HANDSHAKE STUFF MIGHT AS WELL BE BUILT ON TOP OF THE PACKET STUFF
-SECTION "SioConnect State", WRAM0
-
-; Handshake steps remaining
-wSioConnectSteps: db
-
-
-SECTION "SioConnect Impl", ROM0
-
-; Start Sio with external clock
-SioConnectJoin::
-	ret
-
-
-; Start Sio with internal serial clock
-SioConnectInvite::
-	ret
-
-
-*/
-
 
