@@ -1,8 +1,8 @@
 
 include "hw.inc"
 include "acharmap.inc"
-include "serial.inc"
-include "packet.inc"
+;include "serial.inc"
+;include "packet.inc"
 
 
 ; LoadBitSwitch Q, u, R, c0, c1
@@ -48,17 +48,30 @@ strPktCheckOk:   StrDB "Chk^yes^"
 strPktCheckFail: StrDB "Chk^no^"
 
 section "fmt_debug_info", rom0
+
 ; @param A: value
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
-fmt_serio_status::
-	call fmt_serio_xfer_status
-
-	ld a, "."
-	bit SIOSTB_QUEUE, b
-	jr z, :+
-	ld a, "Q"
-:
+fmt_sio_config::
+	bit SCB_SOURCE, a
+	jr nz, .intclk
+.extclk
+	ld a, "e"
+	ld [hl+], a
+	ld a, "x"
+	ld [hl+], a
+	jr .end
+.intclk
+	ld a, "i"
+	ld [hl+], a
+	ld a, "n"
+	ld [hl+], a
+.end
+	ld a, "c"
+	ld [hl+], a
+	ld a, "l"
+	ld [hl+], a
+	ld a, "k"
 	ld [hl+], a
 	ret
 
@@ -66,15 +79,38 @@ fmt_serio_status::
 ; @param A: value
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
-fmt_serio_xfer_status:
-	ld c, $FF ; str terminator
-	ld de, strDown :: bit SIOSTB_ENABLE, a :: jp z, memcpy_terminated
-	and SIOSTF_XFER_STATUS
-	ld de, strIdle :: cp SIOSTF_XFER_IDLE :: jp z, memcpy_terminated
-	ld de, strActive :: cp SIOSTF_XFER_ACTIVE :: jp z, memcpy_terminated
-	ld de, strDone :: cp SIOSTF_XFER_DONE :: jp z, memcpy_terminated
-	ld de, strTimeout :: cp SIOSTF_XFER_TIMEOUT :: jp z, memcpy_terminated
-	jp print_bracketed_h8
+fmt_sio_state::
+	; { i_dle, S_tarted, ^yes^_ompleted, ^no^_ailed }
+	cp SIO_XFER_IDLE
+	jr z, .idle
+	cp SIO_XFER_STARTED
+	jr z, .started
+	cp SIO_XFER_COMPLETED
+	jr z, .completed
+	cp SIO_XFER_FAILED
+	jr z, .failed
+.unknown
+	ld b, a
+	jp utile_print_h8
+.idle
+	ld a, "i"
+	ld [hl+], a
+	jr .end
+.started
+	ld a, ">"
+	ld [hl+], a
+	jr .end
+.completed
+	ld a, "^yes^"
+	ld [hl+], a
+	jr .end
+.failed
+	ld a, "^no^"
+	ld [hl+], a
+.end
+	ld a, " "
+	ld [hl+], a
+	ret
 
 
 ; @param B: Tx value
@@ -127,11 +163,6 @@ fmt_SC::
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
 fmt_hshk_status::
-	ld c, $FF
-	ld de, strHshkConnected :: cp HSHK_CONNECTED :: jp z, memcpy_terminated
-	ld de, strHshkWorking   :: cp HSHK_WORKING   :: jp z, memcpy_terminated
-	ld de, strHshkInit      :: cp HSHK_INIT      :: jp z, memcpy_terminated
-	ld de, strHshkAborted   :: cp HSHK_ABORTED   :: jp z, memcpy_terminated
 	ret
 
 
@@ -150,15 +181,6 @@ fmt_hshk_count::
 ; @param HL: &dest
 ; @mut: AF, HL
 fmt_packet_state::
-	ld c, $FF
-	ld de, strPkstNull    :: cp _PKST_NULL    :: jp z, memcpy_terminated
-	ld de, strPkstPrep    :: cp _PKST_PREP    :: jp z, memcpy_terminated
-	ld de, strPkstStopped :: cp _PKST_STOPPED :: jp z, memcpy_terminated
-	ld de, strPkstReady   :: cp _PKST_READY   :: jp z, memcpy_terminated
-	ld de, strPkstXfer    :: cp _PKST_XFER    :: jp z, memcpy_terminated
-	ld de, strPkstCheck   :: cp _PKST_CHECK   :: jp z, memcpy_terminated
-	ld de, strPkstOk      :: cp _PKST_OK      :: jp z, memcpy_terminated
-	ld de, strPkstError   :: cp _PKST_ERROR   :: jp z, memcpy_terminated
 	ret
 
 
@@ -166,12 +188,6 @@ fmt_packet_state::
 ; @param HL: &dest
 ; @mut: AF, B, HL
 fmt_packet_check::
-	ld b, "^yes^" :: cp PKT_CHECK_OK   :: jr z, .write
-	ld b, "^no^"  :: cp PKT_CHECK_FAIL :: jr z, .write
-	ld b, "?"
-.write
-	ld a, b
-	ld [hl+], a
 	ret
 
 

@@ -59,12 +59,12 @@ main::
 	call obuf_next
 	ld a, [_tick]
 	srl a
-	and $07
-	add OAM_Y_OFS + 16
+	and $1F
+	add OAM_Y_OFS + 64
 	ld [hl+], a
 	ld a, [_tick]
 	and $7F
-	add OAM_X_OFS + 24
+	add OAM_X_OFS
 	ld [hl+], a
 	ld a, [_tick]
 	and $3
@@ -99,12 +99,10 @@ include "main_display.inc"
 ; serial demo
 ;;;;;;;;;;;;;;;;;;;;;;;;
 
-include "serial.inc"
-include "packet.inc"
-
 
 rsreset
 def SERIAL_STATE_INIT rb 1
+def SERIAL_STATE_THING rb 1
 def SERIAL_STATE_HANDSHAKE rb 1
 def SERIAL_STATE_BUILD_PACKET rb 1
 def SERIAL_STATE_PACKET rb 1
@@ -122,11 +120,10 @@ _last_draw_essentials_sec: db
 section "serialdemo", rom0
 
 serialdemo_init:
-	call serio_init
-	call handshake_init
+	call SioInit
 	call serial_clock_init
 
-	ld a, SERIAL_STATE_HANDSHAKE
+	ld a, SERIAL_STATE_INIT
 	ld [wSerialState], a
 
 	xor a
@@ -136,11 +133,7 @@ serialdemo_init:
 	ld a, $FF
 	ld [_last_draw_essentials_sec], a
 
-	ld a, 255
-	ld [wSerTransferTimeout], a
-	call timer_enable
-
-	ret
+	jp timer_enable
 
 
 ; @param B: keys pressed
@@ -164,7 +157,14 @@ serialdemo_update:
 	ld a, 1
 	call display_statln_start
 	push bc
-	call draw_statln_serio
+	call draw_statln_sc_sb
+	pop bc
+	call display_clear_to
+
+	ld a, 2
+	call display_statln_start
+	push bc
+	call draw_sio_info
 	pop bc
 	call display_clear_to
 
@@ -180,207 +180,204 @@ serialdemo_update:
 ; @param B: keys pressed
 _process_input:
 	ldh a, [hKeys]
-	bit PADB_SELECT, a
-	jr nz, :+
-		bit PADB_B, b
-		jr nz, _reset
-		ret
-:
-	call .select
-	ld b, 0
 	ret
-.select
-	ld a, [wSerConfig]
-	bit SERIO_CFGB_ROLE, a
-	jr z, .guest
-	bit PADB_UP, b
-	jr nz, .next_xfer_end_delay
-	ret
-.guest
-	ret
-.next_xfer_end_delay
-	ld a, [wSerHostXferEndDelay]
-	inc a
-	cp 4
-	jr c, :+
-	ld a, 0
-:
-	ld [wSerHostXferEndDelay], a
-	ret
+;	bit PADB_SELECT, a
+;	jr nz, :+
+;		bit PADB_B, b
+;		jr nz, _reset
+;		ret
+;:
+;	call .select
+;	ld b, 0
+;	ret
+;.select
+;	ld a, [wSioConfig]
+;	and SIO_CONFIG_INTCLK
+;	jr z, .guest
+;	bit PADB_UP, b
+;	jr nz, .next_xfer_end_delay
+;	ret
+;.guest
+;	ret
+;.next_xfer_end_delay
+;	ld a, [wSerHostXferEndDelay]
+;	inc a
+;	cp 4
+;	jr c, :+
+;	ld a, 0
+;:
+;	ld [wSerHostXferEndDelay], a
+;	ret
 
 
 _reset:
-	call packet_stop
-	call handshake_abort
 	call display_clear
 	ld a, SERIAL_STATE_INIT
 	ld [wSerialState], a
 	ret
 
 
-_join:
+_toggle_intclk:
 	call display_clear
-	ld a, SERIAL_STATE_HANDSHAKE
-	ld [wSerialState], a
-	jp handshake_join
-
-
-_host:
-	call display_clear
-	ld a, SERIAL_STATE_HANDSHAKE
-	ld [wSerialState], a
-	jp handshake_host
-
-
-_packet_start:
-	call display_clear
-	ld a, SERIAL_STATE_PACKET
-	ld [wSerialState], a
-	jp packet_init
-
-
-_blaster_start:
-	call display_clear
-	ld a, SERIAL_STATE_BLASTER
-	ld [wSerialState], a
-	call serial_blaster_start
+	ld a, [wSioConfig]
+	xor SIO_CONFIG_INTCLK
+	ld [wSioConfig], a
 	ret
+
+
+_start_thing:
+	call SioTestInit
+	ld a, SERIAL_STATE_THING
+	ld [wSerialState], a
+	ret
+
+
+; _blaster_start:
+; 	call display_clear
+; 	ld a, SERIAL_STATE_BLASTER
+; 	ld [wSerialState], a
+; 	call serial_blaster_start
+; 	ret
 
 
 ; @param B: keys pressed
 _state_update:
 	ld a, [wSerialState]
 	cp SERIAL_STATE_INIT :: jr z, .update_init
-	cp SERIAL_STATE_HANDSHAKE :: jr z, .update_hshk
-	cp SERIAL_STATE_PACKET :: jr z, .update_packet
-	cp SERIAL_STATE_BLASTER :: jp z, serial_blaster_update
+	cp SERIAL_STATE_THING :: jp z, SioTestUpdate
 	ret
 .update_init:
-	bit PADB_A, b :: jr nz, _join
-	bit PADB_START, b :: jr nz, _host
+	bit PADB_START, b
+	jr nz, _toggle_intclk
+	bit PADB_A, b
+	jr nz, _start_thing
 	ret
-.update_hshk:
-	call _process_input_hshk
-
-	ld a, 2
-	call display_statln_start
-	push bc
-	call draw_hshk
-	pop bc
-	call display_clear_to
-
-	ret
-.update_packet:
-	call _process_input_packet
-
-	ld a, 2
-	call display_statln_start
-	push bc
-	call draw_packet_sys
-	pop bc
-	call display_clear_to
-
-	ld a, 3
-	call display_statln_start
-	ld a, "^tx^" :: ld [hl+], a
-	ld c, PKT_DATA_SZ
-	ld de, _packet_tx
-	call draw_packet_buffer
-
-	ld a, 4
-	call display_statln_start
-	ld a, "^rx^" :: ld [hl+], a
-	ld c, PKT_DATA_SZ
-	ld de, _packet_rx
-	call draw_packet_buffer
-
-	ret
-
-
-; @param B: keys pressed
-_process_input_hshk:
-	ld a, [wHshkState]
-	cp HSHK_CONNECTED
-	jr z, :+
-		bit PADB_A, b :: jp nz, handshake_join
-		bit PADB_START, b :: jp nz, handshake_host
-		ret
-:
-	bit PADB_A, b :: jp nz, _packet_start
-	bit PADB_RIGHT, b :: jp nz, _blaster_start
-	ret
-
-
-; @param B: keys pressed
-_process_input_packet:
-	; A: start packet send
-	; L/R/U/D: build (and send) next packet
-	ld a, [wPacketStateLoc]
-	and PKST_MAJOR
-	jr z, :+
-	cp PKST_MAJ_RESULT :: ret nz
-:
-
-	bit PADB_A, b :: jp nz, packet_tx_begin
-	bit PADB_LEFT, b :: jr nz, _build_packet_good
-	bit PADB_DOWN, b :: jr nz, _build_packet_gen
-	bit PADB_RIGHT, b :: jr nz, _build_packet_random
-	ret
-
-
-; known-good packet data
-; @mut: AF, BC, DE, HL
-_build_packet_good:
-	ld de, rGoodData2
-	ld a, [wSerConfig]
-	bit SERIO_CFGB_ROLE, a
-	jr z, :+
-	ld de, rGoodData1
-:
-	ld bc, PKT_DATA_SZ
-	ld hl, _packet_tx.data
-	call memcpy
-	jp packet_tx_finalise
-
-
-rGoodData1: db $50, $51, $52, $53, $54, $55, $56, $57
-rGoodData2: db $58, $59, $5A, $5B, $5C, $5D, $5E, $5F
-
-
-; not very random packet data
-; @mut: AF, C, DE, HL
-_build_packet_random:
-	ld hl, _packet_tx.data
-	ld c, PKT_DATA_SZ
-	ld a, [wTick + 0]
-	ld e, a
-	ld a, [wTick + 1]
-	xor e
-:
-		ld [hl+], a
-		inc a
-		dec c
-	jr nz, :-
-	jp packet_tx_finalise
-
-
-; simple pattern of repeating generation number
-_build_packet_gen:
-	ld hl, _packet_tx.data
-	ld c, PKT_DATA_SZ
-	ld a, [wPktGen]
-:
-		ld [hl+], a
-		dec c
-	jr nz, :-
-	inc a
-	ld [wPktGen], a
-	jp packet_tx_finalise
-
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+DEF SIOTEST_BUFFER_SIZE EQU 32
+DEF SIOTEST_XFER_COUNT EQU 16
+
+SECTION "SerialDemo/SioTest State", WRAM0
+
+wSioTestFlippy: db
+wSioTestWait: db
+
+; wSioTestBufferTx: ds SIOTEST_BUFFER_SIZE
+wSioTestBufferRx: ds SIOTEST_BUFFER_SIZE
+
+SECTION "SerialDemo/SioTest Impl", ROM0
+
+SioTestDataA:
+FOR I, 16
+	db I
+ENDR
+	db "0123456789ABCDEF"
+	db "[OH GOD NO STOP]"
+
+SioTestDataB:
+FOR I, 16
+	db $80 + I
+ENDR
+	db "Hi (that is all)"
+	db "[STOP. GO BACK.]"
+
+
+SioTestInit::
+	xor a
+	ld [wSioTestFlippy], a
+	ld [wSioTestWait], a
+	ld c, SIOTEST_BUFFER_SIZE
+	ld hl, wSioTestBufferRx
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ret
+
+
+SioTestUpdate::
+	ldh a, [hKeysPressed]
+	bit PADB_A, a
+	jr z, :+
+	ld a, [wSioCount]
+	and a
+	jr z, SioTestStartThing
+	ld a, [wSioState]
+	cp SIO_XFER_FAILED
+	jr z, SioTestStartThing
+:
+	ret
+
+;	; A to skip wait
+;	ldh a, [hKeys]
+;	bit PADB_A, a
+;	jr nz, :+
+;	ld a, [wSioTestWait]
+;	and a
+;	jr z, :+
+;	dec a
+;	ld [wSioTestWait], a
+;	ret
+;:
+;	xor a
+;	ld [wSioTestWait], a
+
+;	ld a, [wSioState]
+;	cp SIO_XFER_FAILED
+;	jr nz, :+
+;	; press A to continue from failed
+;	ldh a, [hKeysPressed]
+;	bit PADB_A, a
+;	jr nz, SioTestStartThing
+;	ret
+;:
+;	; if not failed, wait for transfers to complete count
+;	ld a, [wSioCount]
+;	and a
+;	jr z, SioTestStartThing
+;	ret
+
+
+SioTestStartThing:
+	ld a, 240
+	ld [wSioTestWait], a
+
+	; set Rx pointer and transfer count
+	ld de, wSioTestBufferRx
+	ld hl, wSioRxPtr
+	ld a, e
+	ld [hl+], a
+	ld [hl], d
+
+	; set Tx pointer
+	ld de, SioTestDataA
+	ld a, [wSioTestFlippy]
+	ld b, a
+	cpl
+	ld [wSioTestFlippy], a
+
+	ld a, [wSioConfig]
+	xor b
+	and SIO_CONFIG_INTCLK
+	jr nz, :+
+	ld de, SioTestDataB
+:
+	ld hl, wSioTxPtr
+	ld a, e
+	ld [hl+], a
+	ld [hl], d
+
+	; set count last
+	ld a, SIOTEST_XFER_COUNT
+	ld [wSioCount], a
+	ret
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; SerialBlaster
+if 0
 
 def BLAST_HOST equ $FA
 def BLAST_GUEST equ $81
@@ -534,6 +531,7 @@ _start_next_xfer:
 	call serio_transmit
 	jp serio_continue
 
+endc ; 0
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -551,9 +549,10 @@ section "SerialDemo/TimerThing", rom0
 timer_enable::
 ;	ld a, $FF ; 4096 /   1 = 4096 Hz
 ;	ld a, $FE ; 4096 /   2 = 2048 Hz
-	ld a, $FC ; 4096 /   4 = 1024 Hz
+;	ld a, $FC ; 4096 /   4 = 1024 Hz
 ;	ld a, $F8 ; 4096 /   8 =  512 Hz
-;	ld a, $00 ; 4096 / 256 =   16 Hz
+;	ld a, $80 ; 4096 / 128 =   32 Hz
+	ld a, $00 ; 4096 / 256 =   16 Hz
 	ldh [rTMA], a
 	ld a, %100
 	ldh [rTAC], a
@@ -568,25 +567,19 @@ irq_timer_handler:
 	push bc
 	push de
 	push hl
-	call serio_tick
+	call SioTick
 
 	; NOTE: this is hardcoded to "work" (as it does) with an interrupt frequency of 1024 Hz.
 	ld hl, wSerialClock.ticks
 	inc [hl] ; ticks++
 	jr nz, :+
 		ld a, 256 - SERIAL_CLOCK_TICKS :: ld [hl+], a
-		; xor a ; 256 ticks = 1 period
-		; ld [hl+], a
 		inc [hl] ; periods++
 		jr nz, :+
 			ld a, 256 - SERIAL_CLOCK_PERIODS :: ld [hl+], a
-			; ld a, 256 - 4 ; 4 periods = 1 second
-			; ld [hl+], a
 			inc [hl] ; seconds++
 			jr nz, :+
 				ld a, 256 - SERIAL_CLOCK_SECONDS :: ld [hl+], a
-				; ld a, 256 - 60 ; 60 seconds = 1 minute
-				; ld [hl+], a
 				inc [hl] ; minutes++
 :
 	pop hl

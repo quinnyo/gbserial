@@ -1,7 +1,7 @@
 
 include "hw.inc"
 include "acharmap.inc"
-include "serial.inc"
+
 
 def BGMAP equ $9800
 def STATLN_DEST equ BGMAP
@@ -160,45 +160,34 @@ draw_essentials:
 
 
 ; @param HL: &dest
-draw_statln_serio:
-	ld a, [wSerConfig] :: ld b, a
-	ld a, "H"
-	bit SERIO_CFGB_ROLE, b
-	jr nz, :+
-	ld a, "g"
-:
+draw_sio_info:
+	; NN: count
+	; C: clock source { in, ex }
+	; S: state { i_dle, S_tarted, ^yes^_ompleted, ^no^_ailed }
+	; TT: timer
+	; " 1234 6789 1234 6789"
+	; "CCclk  S nNN tTT"
+	ld a, [wSioConfig]
+	call fmt_sio_config
+	ld a, " "
 	ld [hl+], a
-
-	ldh a, [hSerStatus]
-	call fmt_serio_status
-
-	ld a, STATLN_BG_CHR :: ld [hl+], a
-
-	ldh a, [hSerTx] :: ld b, a
-	ldh a, [hSerRx] :: ld c, a
-	call fmt_txrx
-
-	ld a, STATLN_BG_CHR :: ld [hl+], a
-
-	ld a, [wSerConfig]
-	and SERIO_CFGF_HOST
-	jr z, .timeout
-	; HOST: xfer end delay
-	ld a, [wSerHostXferEndDelay] :: ld b, a
-	call utile_print_h8
-	ret
-
-.timeout:
-	; GUEST: timeout
-	ldh a, [hTimeoutTicks]
-	and a
-	jr nz, :+
-	ld a, [wSerTransferTimeout]
-:
+	ld [hl+], a
+	ld a, [wSioState]
+	call fmt_sio_state
+	ld a, " "
+	ld [hl+], a
+	ld a, "n"
+	ld [hl+], a
+	ld a, [wSioCount]
 	ld b, a
 	call utile_print_h8
-	ld a, STATLN_BG_CHR :: ld [hl+], a
-	ret
+	ld a, " "
+	ld [hl+], a
+	ld a, "t"
+	ld [hl+], a
+	ld a, [wSioTimer]
+	ld b, a
+	jp utile_print_h8
 
 
 ; @param HL: &dest
@@ -237,28 +226,11 @@ draw_statln_sc_sb:
 
 ; @param HL: &dest
 draw_hshk:
-	ld a, [wHshkState]
-	call fmt_hshk_status
-	ld a, [wHshkCount]
-	call fmt_hshk_count
 	ret
 
 
 ; @param HL: &dest
 draw_packet_sys:
-	ld a, [wPacketCheckLoc]
-	call fmt_packet_check
-	ld a, ":" :: ld [hl+], a
-	ld a, [wPacketCheckRem]
-	call fmt_packet_check
-
-	ld a, " " :: ld [hl+], a
-	ld a, [wPacketStateLoc]
-	call fmt_packet_state
-	ld a, ":" :: ld [hl+], a
-	ld a, [wPacketStateRem]
-	call fmt_packet_state
-
 	ret
 
 
@@ -266,71 +238,7 @@ draw_packet_sys:
 ; @param DE: &packet
 ; @param HL: &dest
 draw_packet_buffer:
-	ld a, [de]
-	inc de
-	ld b, a
-	call utile_print_h8
-	ld a, " " :: ld [hl+], a
-:
-	ld a, [de]
-	inc de
-	ld b, a
-	call utile_print_h8
-
-	dec c
-	jr nz, :-
 	ret
-
-
-; @param HL: &dest
-draw_collection:
-	ld de, _collection
-	ld c, COLLECTION_MAX_COUNT
-.fmt_loop
-	ld a, [de]
-	inc de
-	ld b, a
-	ld a, [de]
-	inc de
-	call draw_coll_item
-
-	call _get_collection_count
-	ld b, a
-	ld a, COLLECTION_MAX_COUNT
-	sub b
-	ld b, " "
-	cp c
-	jr nz, :+
-	ld b, "<"
-:
-	ld a, b
-	ld [hl+], a
-	dec c
-	jr nz, .fmt_loop
-	ret
-
-
-; @param A: code
-; @param B: value
-draw_coll_item:
-	cp SIOSTF_XFER_DONE
-	jr nz, :+
-	ld a, "r"
-	ld [hl+], a
-	jp utile_print_h8
-:
-	cp SIOSTF_XFER_TIMEOUT
-	jr nz, :+
-	ld a, "T"
-	ld [hl+], a
-	ld a, "/"
-	ld [hl+], a
-	ld a, "O"
-	ld [hl+], a
-	ret
-:
-	ld [hl+], a
-	jp utile_print_h8
 
 
 flush_statln:
