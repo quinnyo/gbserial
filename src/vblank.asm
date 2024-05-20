@@ -1,6 +1,12 @@
 
 include "hw.inc"
 
+; Number of bytes allocated to the VBlank counter variable.
+; About selecting the value (4):
+; - 3 bytes should outlast your batteries.
+; - 4 bytes should outlast your patience.
+def VBLANK_COUNT_SZ equ 4
+
 section "irq/vblank", rom0[$40]
 irq_vblank:
 	jp vblank_handler
@@ -14,6 +20,11 @@ hSCY:: db
 hSCX:: db
 
 
+section "wVBlank", wram0
+wTick::
+wVBlankCount:: ds VBLANK_COUNT_SZ
+
+
 section "vblank", rom0
 
 vblank_init::
@@ -25,6 +36,12 @@ vblank_init::
 	xor a
 	ld [hl+], a
 	ld [hl+], a
+
+	xor a
+	ld hl, wVBlankCount
+FOR I, VBLANK_COUNT_SZ
+	ld [hl+], a
+ENDR
 
 	call obuf_init
 
@@ -50,6 +67,15 @@ vblank_handler:
 
 	ld a, 1
 	ldh [hVBlankDone], a
+
+	ld hl, wVBlankCount
+	inc [hl]
+FOR I, VBLANK_COUNT_SZ - 1
+	jr nz, :+
+	inc hl
+	inc [hl]
+ENDR
+:
 
 	pop hl
 	pop af

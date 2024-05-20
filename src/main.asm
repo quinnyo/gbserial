@@ -3,10 +3,6 @@ include "hw.inc"
 include "acharmap.inc"
 
 
-section "wMain", wram0
-_tick: db
-
-
 section "main", rom0
 
 main::
@@ -14,7 +10,6 @@ main::
 	call load_afont
 
 	xor a
-	ld [_tick], a
 	ld hl, startof("wMainDisplay")
 	ld c, sizeof("wMainDisplay")
 :
@@ -49,24 +44,21 @@ main::
 	call obuf_clear
 	call input_update
 
-	ld hl, _tick
-	inc [hl]
-
 	ldh a, [hKeysPressed]
 	ld b, a
 	call serialdemo_update
 
 	call obuf_next
-	ld a, [_tick]
+	ld a, [wTick]
 	srl a
 	and $1F
 	add OAM_Y_OFS + 64
 	ld [hl+], a
-	ld a, [_tick]
+	ld a, [wTick]
 	and $7F
 	add OAM_X_OFS
 	ld [hl+], a
-	ld a, [_tick]
+	ld a, [wTick]
 	and $3
 	ld [hl+], a
 	ld a, OAMF_PAL1
@@ -108,7 +100,6 @@ def SERIAL_STATE_THING rb 1
 section "wSerialdemo", wram0
 
 wSerialState: db
-wTick: dw
 wPktGen: db
 
 _last_draw_essentials_sec: db
@@ -123,8 +114,6 @@ serialdemo_init:
 	ld [wSerialState], a
 
 	xor a
-	ld [wTick + 0], a
-	ld [wTick + 1], a
 	ld [wPktGen], a
 	ld a, $FF
 	ld [_last_draw_essentials_sec], a
@@ -164,12 +153,6 @@ serialdemo_update:
 	pop bc
 	call display_clear_to
 
-	ld hl, wTick
-	inc [hl]
-	jr nz, :+
-	inc hl
-	inc [hl]
-:
 	ret
 
 
