@@ -103,10 +103,6 @@ include "main_display.inc"
 rsreset
 def SERIAL_STATE_INIT rb 1
 def SERIAL_STATE_THING rb 1
-def SERIAL_STATE_HANDSHAKE rb 1
-def SERIAL_STATE_BUILD_PACKET rb 1
-def SERIAL_STATE_PACKET rb 1
-def SERIAL_STATE_BLASTER rb 1
 
 
 section "wSerialdemo", wram0
@@ -181,33 +177,6 @@ serialdemo_update:
 _process_input:
 	ldh a, [hKeys]
 	ret
-;	bit PADB_SELECT, a
-;	jr nz, :+
-;		bit PADB_B, b
-;		jr nz, _reset
-;		ret
-;:
-;	call .select
-;	ld b, 0
-;	ret
-;.select
-;	ld a, [wSioConfig]
-;	and SIO_CONFIG_INTCLK
-;	jr z, .guest
-;	bit PADB_UP, b
-;	jr nz, .next_xfer_end_delay
-;	ret
-;.guest
-;	ret
-;.next_xfer_end_delay
-;	ld a, [wSerHostXferEndDelay]
-;	inc a
-;	cp 4
-;	jr c, :+
-;	ld a, 0
-;:
-;	ld [wSerHostXferEndDelay], a
-;	ret
 
 
 _reset:
@@ -230,14 +199,6 @@ _start_thing:
 	ld a, SERIAL_STATE_THING
 	ld [wSerialState], a
 	ret
-
-
-; _blaster_start:
-; 	call display_clear
-; 	ld a, SERIAL_STATE_BLASTER
-; 	ld [wSerialState], a
-; 	call serial_blaster_start
-; 	ret
 
 
 ; @param B: keys pressed
@@ -387,165 +348,6 @@ SioTestDraw:
 	pop bc
 	call display_clear_to
 	ret
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; SerialBlaster
-if 0
-
-def BLAST_HOST equ $FA
-def BLAST_GUEST equ $81
-
-def SERIAL_BLASTER_DIV_OK_DEFAULT    equ $80
-def SERIAL_BLASTER_DIV_ERROR_DEFAULT equ $01
-
-section "wSerialBlaster", wram0
-; Number of expected values received (consecutively) to count as one OK.
-_div_ok: db
-_raw_ok: db
-_count_ok: db
-; Number of unexpected values received (consecutively) to count as one ERROR.
-_div_error: db
-_raw_error: db
-_count_error: db
-_count_timeout: db
-
-
-section "SerialBlaster", rom0
-
-serial_blaster_start::
-	ld a, low(_on_xfer_end) :: ld [wSerioOnXferEnd + 0], a
-	ld a, high(_on_xfer_end) :: ld [wSerioOnXferEnd + 1], a
-	xor a
-	ld [_count_ok], a
-	ld [_count_error], a
-	ld [_count_timeout], a
-	ld a, SERIAL_BLASTER_DIV_OK_DEFAULT
-	ld [_div_ok], a
-	ld [_raw_ok], a
-	ld a, SERIAL_BLASTER_DIV_ERROR_DEFAULT
-	ld [_div_error], a
-	ld [_raw_error], a
-	jp _start_next_xfer
-
-
-; @param B: keys pressed
-serial_blaster_update::
-	call _blaster_input
-
-	ld a, 2
-	call display_statln_start
-	push bc
-;	ld a, "B" :: ld [hl+], a
-;	ld a, "l" :: ld [hl+], a
-;	ld a, "a" :: ld [hl+], a
-;	ld a, "s" :: ld [hl+], a
-;	ld a, "t" :: ld [hl+], a
-;	ld a, "e" :: ld [hl+], a
-;	ld a, "r" :: ld [hl+], a
-	ld a, "^yes^" :: ld [hl+], a
-	ld a, [_div_ok] :: ld b, a :: call utile_print_h8
-	ld a, ":" :: ld [hl+], a
-	ld a, [_count_ok] :: ld b, a :: call utile_print_h8
-	ld a, " " :: ld [hl+], a
-	ld a, " " :: ld [hl+], a
-	ld a, "^no^" :: ld [hl+], a
-	ld a, [_div_error] :: ld b, a :: call utile_print_h8
-	ld a, ":" :: ld [hl+], a
-	ld a, [_count_error] :: ld b, a :: call utile_print_h8
-	ld a, " " :: ld [hl+], a
-	ld a, " " :: ld [hl+], a
-	ld a, "T" :: ld [hl+], a
-	ld a, [_count_timeout] :: ld b, a :: call utile_print_h8
-	pop bc
-	call display_clear_to
-
-	ret
-
-
-; @param B: keys pressed
-_blaster_input:
-	;    UP/DOWN: adjust (+/-) OK divider
-	; RIGHT/LEFT: adjust (+/-) ERROR divider
-	;      START: reset counts
-	bit PADB_UP, b
-	jr z, :+
-	ld a, [_div_ok]
-	rlca
-	ld [_div_ok], a
-:
-	bit PADB_DOWN, b
-	jr z, :+
-	ld a, [_div_ok]
-	rrca
-	ld [_div_ok], a
-:
-	bit PADB_RIGHT, b
-	jr z, :+
-	ld a, [_div_error]
-	rlca
-	ld [_div_error], a
-:
-	bit PADB_LEFT, b
-	jr z, :+
-	ld a, [_div_error]
-	rrca
-	ld [_div_error], a
-:
-	bit PADB_START, b
-	jr z, :+
-	xor a
-	ld [_count_ok], a
-	ld [_count_error], a
-	ld [_count_timeout], a
-:
-	ret
-
-
-_on_xfer_end:
-	ldh a, [hSerStatus]
-	bit SIOSTB_XFER_TIMEOUT, a
-	jr nz, _timeout
-	ld b, BLAST_HOST
-	ld a, [wSerConfig]
-	and SERIO_CFGF_HOST
-	jr z, :+
-	ld b, BLAST_GUEST
-:
-	ldh a, [hSerRx]
-	cp b
-	jr z, _ok
-
-_error:
-	ld a, [_div_ok] :: ld [_raw_ok], a
-	ld hl, _raw_error :: dec [hl]
-	jr nz, _start_next_xfer
-	ld a, [_div_error] :: ld [hl], a
-	ld hl, _count_error :: inc [hl]
-	jr _start_next_xfer
-_timeout:
-	ld a, [_div_ok] :: ld [_raw_ok], a
-	ld a, [_div_error] :: ld [_raw_error], a
-	ld hl, _count_timeout :: inc [hl]
-	jr _start_next_xfer
-_ok:
-	ld a, [_div_error] :: ld [_raw_error], a
-	ld hl, _raw_ok :: dec [hl]
-	jr nz, _start_next_xfer
-	ld a, [_div_ok] :: ld [hl], a
-	ld hl, _count_ok :: inc [hl]
-_start_next_xfer:
-	ld b, BLAST_GUEST
-	ld a, [wSerConfig]
-	and SERIO_CFGF_HOST
-	jr z, :+
-	ld b, BLAST_HOST
-:
-	ld a, b
-	call serio_transmit
-	jp serio_continue
-
-endc ; 0
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
