@@ -22,6 +22,10 @@ INCLUDE "hardware.inc"
 DEF SIO_TIMEOUT_TICKS EQU 240
 ; Duration of 'catchup' delay period in ticks. (for internally clocked device)
 DEF SIO_CATCHUP_TICKS EQU 1
+IF DEF(_SIO_SHORTCUT)
+; Catchup delay duration when using the Sleep function.
+DEF SIO_CATCHUP_SLEEP_DURATION EQU 10
+ENDC
 
 DEF SIO_CONFIG_INTCLK  EQU SCF_SOURCE
 DEF SIO_CONFIG_DEFAULT EQU 0
@@ -199,12 +203,46 @@ SioCompleteTransfer::
 
 	ldh a, [rSC]
 	and a, SCF_SOURCE
+IF DEF(_SIO_SHORTCUT)
+	jr z, :+
+	ld a, SIO_CATCHUP_SLEEP_DURATION
+	call Sleep
+:
+	jp SioTick
+ELSE
 	jr z, :+
 	; reset delay timer on internal clock
 	ld a, SIO_CATCHUP_TICKS
 	ld [wSioTimer], a
 :
 	ret
+ENDC
+
+
+IF DEF(_SIO_SHORTCUT)
+; | duration | T-states | M-states |
+; |----------|----------|----------|
+; |        0 |       24 |        6 |
+; |      x>0 |  x*24+32 |    x*6+5 |
+; |       20 |      512 |      125 |
+; |      127 |     3080 |      767 |
+; |      255 |     6152 |     1535 |
+; @param A: duration
+Sleep:
+	; (and + ret z + nop + nop) + (jr 0 - jr 1) + (ret) + duration * (nop + nop + dec a + jr 1)
+	; = 20 + -4 + 16 + duration * (4 + 12 + 4 + 4)
+	; = 32 + duration * 24
+	and a
+	ret z
+	nop
+	nop
+:
+	nop
+	nop
+	dec a
+	jr nz, :-
+	ret
+ENDC
 
 
 SECTION "Sio Serial Interrupt", ROM0[$58]
