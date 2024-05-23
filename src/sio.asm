@@ -27,9 +27,11 @@ IF DEF(_SIO_SHORTCUT)
 DEF SIO_CATCHUP_SLEEP_DURATION EQU 10
 ENDC
 
-DEF SIO_CONFIG_INTCLK  EQU SCF_SOURCE
-DEF SIO_CONFIG_DEFAULT EQU 0
-EXPORT SIO_CONFIG_INTCLK
+DEF SIO_CONFIG_INTCLK   EQU SCF_SOURCE
+DEF SIO_CONFIG_RESERVED EQU $02
+DEF SIO_CONFIG_ADVANCE  EQU $04
+DEF SIO_CONFIG_DEFAULT  EQU SIO_CONFIG_ADVANCE
+EXPORT SIO_CONFIG_INTCLK, SIO_CONFIG_ADVANCE
 
 ; SioStatus transfer state enum
 RSRESET
@@ -178,12 +180,15 @@ SioCompleteTransfer::
 	ld l, a
 	ldh a, [rSB]
 	ld [hl+], a
+	; Check if data pointer advance enabled
+	ld a, [wSioConfig]
+	and a, SIO_CONFIG_ADVANCE
+	jr z, .no_advance
 	; store the updated Rx pointer
 	ld a, l
 	ld [wSioRxPtr + 0], a
 	ld a, h
 	ld [wSioRxPtr + 1], a
-
 	; update the Tx pointer
 	ld hl, wSioTxPtr
 	inc [hl] ; inc low byte
@@ -192,7 +197,7 @@ SioCompleteTransfer::
 	inc hl
 	inc [hl]
 :
-
+.no_advance:
 	; update transfer count
 	ld hl, wSioCount
 	dec [hl]
