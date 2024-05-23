@@ -1,6 +1,7 @@
 {
     "rgbdsz80.includePath": [
-        "src",
-        "include",
+        "include/hardware.inc/",
+        "src/",
+        "include/",
     ]
 }
