@@ -233,14 +233,7 @@ SioTestInit::
 
 
 SioTestUpdate::
-	; speed up after first transfer
-	ld a, [wSioCount]
-	cp SIOTEST_XFER_COUNT
-	jr nc, :+
-	ld a, $FF
-	ldh [rTMA], a
-:
-
+	call SioTick
 	call SioTestDraw
 
 	; Start transfer (press A && not transferring)
@@ -260,10 +253,6 @@ SioTestUpdate::
 SioTestStartThing:
 	ld a, SIO_IDLE
 	ld [wSioState], a
-
-	; start slow
-	ld a, $00
-	ldh [rTMA], a
 
 	; set Rx pointer and transfer count
 	ld de, wSioTestBufferRx
@@ -348,10 +337,10 @@ section "SerialDemo/TimerThing", rom0
 timer_enable::
 ;	ld a, $FF ; 4096 /   1 = 4096 Hz
 ;	ld a, $FE ; 4096 /   2 = 2048 Hz
-;	ld a, $FC ; 4096 /   4 = 1024 Hz
+	ld a, $FC ; 4096 /   4 = 1024 Hz
 ;	ld a, $F8 ; 4096 /   8 =  512 Hz
 ;	ld a, $80 ; 4096 / 128 =   32 Hz
-	ld a, $00 ; 4096 / 256 =   16 Hz
+;	ld a, $00 ; 4096 / 256 =   16 Hz
 	ldh [rTMA], a
 	ld a, %100
 	ldh [rTAC], a
@@ -363,10 +352,7 @@ timer_enable::
 
 irq_timer_handler:
 	push af
-	push bc
-	push de
 	push hl
-	call SioTick
 
 	; NOTE: this is hardcoded to "work" (as it does) with an interrupt frequency of 1024 Hz.
 	ld hl, wSerialClock.ticks
@@ -382,8 +368,6 @@ irq_timer_handler:
 				inc [hl] ; minutes++
 :
 	pop hl
-	pop de
-	pop bc
 	pop af
 	reti
 

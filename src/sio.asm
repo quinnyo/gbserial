@@ -20,11 +20,20 @@ INCLUDE "hardware.inc"
 
 ; Duration of timeout period in ticks. (for externally clocked device)
 DEF SIO_TIMEOUT_TICKS EQU 240
-; Duration of 'catchup' delay period in ticks. (for internally clocked device)
-DEF SIO_CATCHUP_TICKS EQU 1
-IF DEF(_SIO_SHORTCUT)
-; Catchup delay duration when using the Sleep function.
-DEF SIO_CATCHUP_SLEEP_DURATION EQU 10
+
+; _SIO_SHORTCUT defaults to 1 (enabled)
+; If enabled, start next transfer immediately after a transfer completes.
+; If disabled (_SIO_SHORTCUT=0), SioTick must be called to start the next transfer.
+IF !DEF(_SIO_SHORTCUT)
+	DEF _SIO_SHORTCUT EQU 1
+ENDC
+
+IF _SIO_SHORTCUT
+	; Catchup delay duration when using the Sleep function.
+	DEF SIO_CATCHUP_SLEEP_DURATION EQU 10
+ELSE
+	; Duration of 'catchup' delay period in ticks. (for internally clocked device)
+	DEF SIO_CATCHUP_TICKS EQU 1
 ENDC
 
 DEF SIO_CONFIG_INTCLK   EQU SCF_SOURCE
@@ -93,9 +102,11 @@ SioTick::
 	jr z, .process_queue
 	cp a, SIO_XFER_STARTED
 	jr z, .xfer_started
+IF !_SIO_SHORTCUT
 	cp a, SIO_XFER_COMPLETED
 	jr z, .process_queue
-	; treat anything else as failed/error and do nothing
+ENDC
+	; anything else: do nothing
 	ret
 .xfer_started:
 	; update timeout on external clock
@@ -114,7 +125,7 @@ SioTick::
 	ld a, [wSioCount]
 	and a, a
 	ret z
-IF !DEF(_SIO_SHORTCUT)
+IF !_SIO_SHORTCUT
 	; if this device is the clock source (internal clock), do catchup delay
 	ldh a, [rSC]
 	bit SCB_SOURCE, a
@@ -210,12 +221,13 @@ SioCompleteTransfer::
 
 	ldh a, [rSC]
 	and a, SCF_SOURCE
-IF DEF(_SIO_SHORTCUT)
+IF _SIO_SHORTCUT
+	; intclk 'catchup delay'
 	jr z, :+
 	ld a, SIO_CATCHUP_SLEEP_DURATION
 	call Sleep
 :
-	jp SioTick
+	jp SioTick.process_queue ; 'shortcut' to queue processing
 ELSE
 	jr z, :+
 	; reset delay timer on internal clock
@@ -226,7 +238,7 @@ ELSE
 ENDC
 
 
-IF DEF(_SIO_SHORTCUT)
+IF _SIO_SHORTCUT
 ; | duration | T-states | M-states |
 ; |----------|----------|----------|
 ; |        0 |       24 |        6 |
