@@ -114,6 +114,7 @@ SioTick::
 	ld a, [wSioCount]
 	and a, a
 	ret z
+IF !DEF(_SIO_SHORTCUT)
 	; if this device is the clock source (internal clock), do catchup delay
 	ldh a, [rSC]
 	bit SCB_SOURCE, a
@@ -124,6 +125,7 @@ SioTick::
 			dec a
 			ld [wSioTimer], a
 			ret
+ENDC
 .start_next:
 	; read the Tx pointer (points to the next value to send)
 	ld hl, wSioTxPtr
