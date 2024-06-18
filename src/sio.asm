@@ -19,7 +19,7 @@
 INCLUDE "hardware.inc"
 
 ; Duration of timeout period in ticks. (for externally clocked device)
-DEF SIO_TIMEOUT_TICKS EQU 240
+DEF SIO_TIMEOUT_TICKS EQU 60
 
 ; _SIO_SHORTCUT defaults to 1 (enabled)
 ; If enabled, start next transfer immediately after a transfer completes.
@@ -30,7 +30,7 @@ ENDC
 
 IF _SIO_SHORTCUT
 	; Catchup delay duration when using the Sleep function.
-	DEF SIO_CATCHUP_SLEEP_DURATION EQU 10
+	DEF SIO_CATCHUP_SLEEP_DURATION EQU 200
 ELSE
 	; Duration of 'catchup' delay period in ticks. (for internally clocked device)
 	DEF SIO_CATCHUP_TICKS EQU 1
@@ -45,12 +45,14 @@ EXPORT SIO_CONFIG_INTCLK, SIO_CONFIG_ADVANCE
 ; SioStatus transfer state enum
 RSRESET
 DEF SIO_IDLE           RB 1
-DEF SIO_XFER_COMPLETED RB 1
-DEF SIO_XFER_FAILED    RB 1
+DEF SIO_FAILED         RB 1
+DEF SIO_DONE           RB 1
 DEF SIO_BUSY           RB 0
 DEF SIO_XFER_START     RB 1
 DEF SIO_XFER_STARTED   RB 1
-EXPORT SIO_IDLE, SIO_XFER_START, SIO_XFER_STARTED, SIO_XFER_COMPLETED, SIO_XFER_FAILED, SIO_BUSY
+DEF SIO_XFER_COMPLETED RB 1
+EXPORT SIO_IDLE, SIO_FAILED, SIO_DONE
+EXPORT SIO_BUSY, SIO_XFER_START, SIO_XFER_STARTED, SIO_XFER_COMPLETED
 
 
 SECTION "SioCore State", WRAM0
@@ -118,7 +120,7 @@ ENDC
 	ret z ; timer == 0, timeout disabled
 	dec a
 	ld [wSioTimer], a
-	jr z, SioAbortTransfer
+	jr z, SioAbort
 	ret
 .process_queue:
 	; if SioCount > 0: start next transfer
@@ -168,8 +170,8 @@ ENDC
 
 ; Abort the ongoing transfer (if any) and enter the FAILED state.
 ; @mut: AF
-SioAbortTransfer::
-	ld a, SIO_XFER_FAILED
+SioAbort::
+	ld a, SIO_FAILED
 	ld [wSioState], a
 	ldh a, [rSC]
 	res SCB_START, a
@@ -211,12 +213,16 @@ SioCompleteTransfer::
 	inc [hl]
 :
 .no_advance:
+
+	; set state to 'completed'
+	ld a, SIO_XFER_COMPLETED
 	; update transfer count
 	ld hl, wSioCount
 	dec [hl]
-
-	; set transfer state to 'completed'
-	ld a, SIO_XFER_COMPLETED
+	jr nz, :+
+	; completed all, set DONE instead
+	ld a, SIO_DONE
+:
 	ld [wSioState], a
 
 	ldh a, [rSC]

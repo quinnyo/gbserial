@@ -83,14 +83,16 @@ fmt_sio_state::
 	; { i_dle, S_tarted, ^yes^_ompleted, ^no^_ailed }
 	cp SIO_IDLE
 	jr z, .idle
+	cp SIO_FAILED
+	jr z, .failed
+	cp SIO_DONE
+	jr z, .done
 	cp SIO_XFER_START
-	jr z, .started
+	jr z, .start
 	cp SIO_XFER_STARTED
 	jr z, .started
 	cp SIO_XFER_COMPLETED
 	jr z, .completed
-	cp SIO_XFER_FAILED
-	jr z, .failed
 .unknown
 	ld b, a
 	jp utile_print_h8
@@ -98,17 +100,26 @@ fmt_sio_state::
 	ld a, "I"
 	ld [hl+], a
 	jr .end
+.failed
+	ld a, "^no^"
+	ld [hl+], a
+	jr .end
+.done
+	ld a, "^yes^"
+	ld [hl+], a
+	jr .end
+.start
+	ld a, "s"
+	ld [hl+], a
+	jr .end
 .started
 	ld a, ">"
 	ld [hl+], a
 	jr .end
 .completed
-	ld a, "^yes^"
+	ld a, "o"
 	ld [hl+], a
 	jr .end
-.failed
-	ld a, "^no^"
-	ld [hl+], a
 .end
 	ld a, " "
 	ld [hl+], a

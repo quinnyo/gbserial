@@ -158,7 +158,8 @@ serialdemo_update:
 
 ; @param B: keys pressed
 _process_input:
-	ldh a, [hKeys]
+	bit PADB_START, b
+	jr nz, _toggle_intclk
 	ret
 
 
@@ -191,25 +192,25 @@ _state_update:
 	cp SERIAL_STATE_THING :: jp z, SioTestUpdate
 	ret
 .update_init:
-	bit PADB_START, b
-	jr nz, _toggle_intclk
-	bit PADB_A, b
-	jr nz, _start_thing
+	jr _start_thing
 	ret
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 DEF SIOTEST_BUFFER_SIZE EQU 32
-DEF SIOTEST_XFER_COUNT EQU 16
+DEF SIOTEST_PKT_DATA_LENGTH EQU 16
+DEF SIOTEST_DELAY_EXT EQU 1
+DEF SIOTEST_DELAY_INT EQU 2
+
 
 SECTION "SerialDemo/SioTest State", WRAM0
 
 wSioTestFlippy: db
+wSioTestStartDelay: db
 
 wSioTestBufferRx: ds SIOTEST_BUFFER_SIZE
 
-wSioTestRetries: db
 
 SECTION "SerialDemo/SioTest Impl", ROM0
 
@@ -223,6 +224,7 @@ SioTestDataB:
 SioTestInit::
 	xor a
 	ld [wSioTestFlippy], a
+	ld [wSioTestStartDelay], a
 	ld c, SIOTEST_BUFFER_SIZE
 	ld hl, wSioTestBufferRx
 :
@@ -233,28 +235,14 @@ SioTestInit::
 
 
 SioTestUpdate::
+	call SioTestStartAuto
 	call SioTick
 	call SioTestDraw
-
-	; Start transfer (press A && not transferring)
-	ldh a, [hKeysPressed]
-	bit PADB_A, a
-	jr z, :+
-	ld a, [wSioCount]
-	and a
-	jr z, SioTestStartThing
-	ld a, [wSioState]
-	cp SIO_XFER_FAILED
-	jr z, SioTestStartThing
-:
 	ret
 
 
 SioTestStartThing:
-	ld a, SIO_IDLE
-	ld [wSioState], a
-
-	; set Rx pointer and transfer count
+	; set Rx pointer
 	ld de, wSioTestBufferRx
 	ld hl, wSioRxPtr
 	ld a, e
@@ -280,11 +268,36 @@ SioTestStartThing:
 	ld [hl], d
 
 	; set count and request start
-	ld a, SIOTEST_XFER_COUNT
+	ld a, SIOTEST_PKT_DATA_LENGTH
 	ld [wSioCount], a
 	ld a, SIO_XFER_START
 	ld [wSioState], a
 	ret
+
+
+SioTestStartAuto:
+	ld a, [wSioState]
+	cp SIO_BUSY
+	ret nc
+
+	; tick delay timer, start thing at zero
+	ld a, [wSioTestStartDelay]
+	and a
+	jr z, .go_forth
+	dec a
+	ld [wSioTestStartDelay], a
+	ret
+.go_forth
+	; Reset delay timer
+	ld b, SIOTEST_DELAY_INT
+	ld a, [wSioConfig]
+	and SIO_CONFIG_INTCLK
+	jr nz, :+
+	ld b, SIOTEST_DELAY_EXT
+:
+	ld a, b
+	ld [wSioTestStartDelay], a
+	jr SioTestStartThing
 
 
 SioTestDraw:
@@ -299,7 +312,7 @@ SioTestDraw:
 	ld a, "'"
 	ld [hl+], a
 	ld de, wSioTestBufferRx
-	ld c, SIOTEST_XFER_COUNT
+	ld c, SIOTEST_PKT_DATA_LENGTH
 .loop
 	; stop early if we caught up to the Rx pointer
 	ld a, [wSioRxPtr + 1]
