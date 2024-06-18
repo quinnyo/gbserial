@@ -242,10 +242,10 @@ IF _SIO_SHORTCUT
 ; | duration | T-states | M-states |
 ; |----------|----------|----------|
 ; |        0 |       24 |        6 |
-; |      x>0 |  x*24+32 |    x*6+5 |
-; |       20 |      512 |      125 |
-; |      127 |     3080 |      767 |
-; |      255 |     6152 |     1535 |
+; |      x>0 |  x*24+32 |    x*6+8 |
+; |       20 |      512 |      128 |
+; |      127 |     3080 |      770 |
+; |      255 |     6152 |     1538 |
 ; @param A: duration
 Sleep:
 	; (and + ret z + nop + nop) + (jr 0 - jr 1) + (ret) + duration * (nop + nop + dec a + jr 1)
