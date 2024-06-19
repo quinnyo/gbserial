@@ -198,8 +198,10 @@ _state_update:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-DEF SIOTEST_BUFFER_SIZE EQU 32
 DEF SIOTEST_PKT_DATA_LENGTH EQU 16
+DEF SIOTEST_PKT_HEADER_LENGTH EQU 2
+DEF SIOTEST_PKT_TOTAL_LENGTH EQU SIOTEST_PKT_DATA_LENGTH + SIOTEST_PKT_HEADER_LENGTH
+DEF SIOTEST_PKT_START EQU $77
 DEF SIOTEST_DELAY_EXT EQU 1
 DEF SIOTEST_DELAY_INT EQU 2
 
@@ -209,7 +211,21 @@ SECTION "SerialDemo/SioTest State", WRAM0
 wSioTestFlippy: db
 wSioTestStartDelay: db
 
-wSioTestBufferRx: ds SIOTEST_BUFFER_SIZE
+wSioTestBufferRx: ; ds SIOTEST_PKT_TOTAL_LENGTH
+	.id: db
+	.check: db
+	.data: ds SIOTEST_PKT_DATA_LENGTH
+	.end:
+wSioTestBufferTx: ; ds SIOTEST_PKT_TOTAL_LENGTH
+	.id: db
+	.check: db
+	.data: ds SIOTEST_PKT_DATA_LENGTH
+	.end:
+
+wSioTestResults: ds 16
+	.end:
+wSioTestResultsPtr: dw
+wSioTestResultsCount: db
 
 
 SECTION "SerialDemo/SioTest Impl", ROM0
@@ -225,16 +241,36 @@ SioTestInit::
 	xor a
 	ld [wSioTestFlippy], a
 	ld [wSioTestStartDelay], a
-	ld c, SIOTEST_BUFFER_SIZE
+	ld c, wSioTestBufferRx.end - wSioTestBufferRx
 	ld hl, wSioTestBufferRx
 :
 	ld [hl+], a
 	dec c
 	jr nz, :-
+	ld c, wSioTestBufferTx.end - wSioTestBufferTx
+	ld hl, wSioTestBufferTx
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ld hl, wSioTestResults
+	ld c, wSioTestResults.end - wSioTestResults
+	ld a, "-"
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ld a, low(wSioTestResults)
+	ld [wSioTestResultsPtr + 0], a
+	ld a, high(wSioTestResults)
+	ld [wSioTestResultsPtr + 1], a
+	ld a, wSioTestResults.end - wSioTestResults
+	ld [wSioTestResultsCount], a
 	ret
 
 
 SioTestUpdate::
+	call SioTestCheckStatus
 	call SioTestStartAuto
 	call SioTick
 	call SioTestDraw
@@ -250,6 +286,13 @@ SioTestStartThing:
 	ld [hl], d
 
 	; set Tx pointer
+	ld de, wSioTestBufferTx
+	ld hl, wSioTxPtr
+	ld a, e
+	ld [hl+], a
+	ld [hl], d
+
+	; Copy test data to packet buffer
 	ld de, SioTestDataA
 	ld a, [wSioTestFlippy]
 	ld b, a
@@ -262,13 +305,13 @@ SioTestStartThing:
 	jr nz, :+
 	ld de, SioTestDataB
 :
-	ld hl, wSioTxPtr
-	ld a, e
-	ld [hl+], a
-	ld [hl], d
+	call SioTestPacketTxPrepare
+	ld bc, SIOTEST_PKT_DATA_LENGTH
+	call memcpy
+	call SioTestPacketTxFinalise
 
 	; set count and request start
-	ld a, SIOTEST_PKT_DATA_LENGTH
+	ld a, wSioTestBufferRx.end - wSioTestBufferRx
 	ld [wSioCount], a
 	ld a, SIO_XFER_START
 	ld [wSioState], a
@@ -300,6 +343,96 @@ SioTestStartAuto:
 	jr SioTestStartThing
 
 
+; Prepare Tx packet buffer for writing.
+; @return HL: packet data pointer
+; @mut: AF, C, HL
+SioTestPacketTxPrepare:
+	ld hl, wSioTestBufferTx
+	; packet always starts with constant ID
+	ld a, SIOTEST_PKT_START
+	ld [hl+], a
+	; checksum = 0 for initial calculation
+	ld a, 0
+	ld [hl+], a
+	ld c, SIOTEST_PKT_DATA_LENGTH
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ld hl, wSioTestBufferTx.data
+	ret
+
+
+; @mut: AF, C, HL
+SioTestPacketTxFinalise:
+	ld hl, wSioTestBufferTx
+	ld c, wSioTestBufferTx.end - wSioTestBufferTx
+	call Checksum8
+	ld [wSioTestBufferTx.check], a
+	ret
+
+
+; @return F.Z: if check OK
+; @mut: AF, C, HL
+SioTestPacketRxCheck:
+	; expect constant
+	ld a, [wSioTestBufferRx.id]
+	cp a, SIOTEST_PKT_START
+	ret nz
+
+	; check the sum
+	ld hl, wSioTestBufferRx
+	ld c, wSioTestBufferRx.end - wSioTestBufferRx
+	call Checksum8
+	and a, a
+	ret ; F.Z already set (or not)
+
+
+SioTestCheckStatus:
+	ld b, "^no^"
+	ld a, [wSioState]
+	cp SIO_FAILED
+	jr z, .result
+	cp SIO_DONE
+	ret nz ; no result yet
+	ld b, "^yes^"
+	call SioTestPacketRxCheck
+	jr z, .result
+	ld b, "!"
+.result
+	; Clear done/failed status
+	ld a, SIO_IDLE
+	ld [wSioState], a
+	jr SioTestPushResult
+
+
+; @param B: result
+SioTestPushResult:
+	ld hl, wSioTestResultsPtr
+	ld a, [hl+]
+	ld h, [hl]
+	ld l, a
+
+	ld a, [wSioTestResultsCount]
+	and a, a
+	jr nz, :+
+	; Count == 0: go to start
+	ld hl, wSioTestResults
+	ld a, wSioTestResults.end - wSioTestResults
+:
+	dec a
+	ld [wSioTestResultsCount], a
+
+	ld a, b
+	ld [hl+], a
+	ld a, l
+	ld [wSioTestResultsPtr + 0], a
+	ld a, h
+	ld [wSioTestResultsPtr + 1], a
+
+	jr SioTestDrawResults
+
+
 SioTestDraw:
 	; draw Rx buffer
 	ld a, 3
@@ -311,7 +444,7 @@ SioTestDraw:
 	ld [hl+], a
 	ld a, "'"
 	ld [hl+], a
-	ld de, wSioTestBufferRx
+	ld de, wSioTestBufferRx.data
 	ld c, SIOTEST_PKT_DATA_LENGTH
 .loop
 	; stop early if we caught up to the Rx pointer
@@ -332,6 +465,26 @@ SioTestDraw:
 	ld [hl+], a
 	pop bc
 	call display_clear_to
+	ret
+
+
+SioTestDrawResults:
+	ld a, 4
+	call display_statln_start
+	ld de, wSioTestResults
+	ld a, [wSioTestResultsCount]
+	ld c, a
+	ld a, wSioTestResults.end - wSioTestResults
+	sub c
+	ld c, a
+:
+	ld a, [de]
+	inc de
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ld a, " "
+	ld [hl+], a
 	ret
 
 
