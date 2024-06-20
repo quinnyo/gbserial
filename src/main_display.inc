@@ -336,16 +336,22 @@ flush_collection:
 ; @param B: length
 ; @mut: AF, BC, DE, HL
 bgmap_buffer_flush:
+	ld a, [rLCDC]
+	and LCDCF_ON
+	jr z, .copy_loop
+	ld c, low(rLY)
 :
-	; wait for vmem
-	ldh a, [rSTAT]
-	and STATF_BUSY
-	jr nz, :-
+	ld a, [c]
+	cp 144
+	jr c, :-
+	cp 151
+	jr nc, :-
+.copy_loop
 	ld a, [de]
 	ld [hl+], a
 	inc de
 	dec b
-	jr nz, :-
+	jr nz, .copy_loop
 	ret
 
 ;
