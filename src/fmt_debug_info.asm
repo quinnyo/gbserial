@@ -87,12 +87,8 @@ fmt_sio_state::
 	jr z, .failed
 	cp SIO_DONE
 	jr z, .done
-	cp SIO_XFER_START
-	jr z, .start
 	cp SIO_XFER_STARTED
 	jr z, .started
-	cp SIO_XFER_COMPLETED
-	jr z, .completed
 .unknown
 	ld b, a
 	jp utile_print_h8
@@ -108,16 +104,8 @@ fmt_sio_state::
 	ld a, "^yes^"
 	ld [hl+], a
 	jr .end
-.start
-	ld a, "s"
-	ld [hl+], a
-	jr .end
 .started
 	ld a, ">"
-	ld [hl+], a
-	jr .end
-.completed
-	ld a, "o"
 	ld [hl+], a
 	jr .end
 .end

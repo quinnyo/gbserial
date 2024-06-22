@@ -21,26 +21,13 @@ INCLUDE "hardware.inc"
 ; Duration of timeout period in ticks. (for externally clocked device)
 DEF SIO_TIMEOUT_TICKS EQU 60
 
-; _SIO_SHORTCUT defaults to 1 (enabled)
-; If enabled, start next transfer immediately after a transfer completes.
-; If disabled (_SIO_SHORTCUT=0), SioTick must be called to start the next transfer.
-IF !DEF(_SIO_SHORTCUT)
-	DEF _SIO_SHORTCUT EQU 1
-ENDC
-
-IF _SIO_SHORTCUT
-	; Catchup delay duration when using the Sleep function.
-	DEF SIO_CATCHUP_SLEEP_DURATION EQU 200
-ELSE
-	; Duration of 'catchup' delay period in ticks. (for internally clocked device)
-	DEF SIO_CATCHUP_TICKS EQU 1
-ENDC
+; Catchup delay duration
+DEF SIO_CATCHUP_SLEEP_DURATION EQU 100
 
 DEF SIO_CONFIG_INTCLK   EQU SCF_SOURCE
 DEF SIO_CONFIG_RESERVED EQU $02
-DEF SIO_CONFIG_ADVANCE  EQU $04
-DEF SIO_CONFIG_DEFAULT  EQU SIO_CONFIG_ADVANCE
-EXPORT SIO_CONFIG_INTCLK, SIO_CONFIG_ADVANCE
+DEF SIO_CONFIG_DEFAULT  EQU $00
+EXPORT SIO_CONFIG_INTCLK
 
 ; SioStatus transfer state enum
 RSRESET
@@ -48,11 +35,21 @@ DEF SIO_IDLE           RB 1
 DEF SIO_FAILED         RB 1
 DEF SIO_DONE           RB 1
 DEF SIO_BUSY           RB 0
-DEF SIO_XFER_START     RB 1
 DEF SIO_XFER_STARTED   RB 1
-DEF SIO_XFER_COMPLETED RB 1
 EXPORT SIO_IDLE, SIO_FAILED, SIO_DONE
-EXPORT SIO_BUSY, SIO_XFER_START, SIO_XFER_STARTED, SIO_XFER_COMPLETED
+EXPORT SIO_BUSY, SIO_XFER_STARTED
+
+DEF SIO_PACKET_BUFFER_SIZE EQU 32
+DEF SIO_PACKET_HEAD_SIZE   EQU 0
+DEF SIO_PACKET_DATA_SIZE   EQU SIO_PACKET_BUFFER_SIZE - SIO_PACKET_HEAD_SIZE
+
+
+SECTION "SioBufferRx", WRAM0, ALIGN[8]
+wSioBufferRx:: ds SIO_PACKET_BUFFER_SIZE
+
+
+SECTION "SioBufferTx", WRAM0, ALIGN[8]
+wSioBufferTx:: ds SIO_PACKET_BUFFER_SIZE
 
 
 SECTION "SioCore State", WRAM0
@@ -60,16 +57,18 @@ SECTION "SioCore State", WRAM0
 wSioConfig:: db
 ; Sio state machine current state
 wSioState:: db
-; Source address of next value to transmit
-wSioTxPtr:: dw
-; Destination address of next received value
-wSioRxPtr:: dw
 ; Number of transfers to perform (bytes to transfer)
 wSioCount:: db
-
+wSioBufferOffset:: db
 ; Timer state (as ticks remaining, expires at zero) for timeouts and delays.
 ; HACK: this is only "public" (::) for access by debug display code.
 wSioTimer:: db
+
+
+SECTION "Sio Serial Interrupt", ROM0[$58]
+SerialInterrupt:
+	jp SioInterruptHandler
+
 
 SECTION "SioCore Impl", ROM0
 ; Initialise/reset Sio to the ready to use 'IDLE' state.
@@ -82,13 +81,9 @@ SioInit::
 	ld [wSioState], a
 	ld a, 0
 	ld [wSioTimer], a
-	ld a, $FF ; using FFFF as 'null'/unset
-	ld [wSioTxPtr + 0], a
-	ld [wSioTxPtr + 1], a
-	ld [wSioRxPtr + 0], a
-	ld [wSioRxPtr + 1], a
 	ld a, 0
 	ld [wSioCount], a
+	ld [wSioBufferOffset], a
 
 	; enable serial interrupt
 	ldh a, [rIE]
@@ -100,17 +95,18 @@ SioInit::
 ; @mut: AF, HL
 SioTick::
 	ld a, [wSioState]
-	cp a, SIO_XFER_START
-	jr z, .process_queue
 	cp a, SIO_XFER_STARTED
 	jr z, .xfer_started
-IF !_SIO_SHORTCUT
-	cp a, SIO_XFER_COMPLETED
-	jr z, .process_queue
-ENDC
 	; anything else: do nothing
 	ret
 .xfer_started:
+	ld a, [wSioCount]
+	and a, a
+	jr nz, :+
+	ld a, SIO_DONE
+	ld [wSioState], a
+	ret
+:
 	; update timeout on external clock
 	ldh a, [rSC]
 	and a, SCF_SOURCE
@@ -121,50 +117,6 @@ ENDC
 	dec a
 	ld [wSioTimer], a
 	jr z, SioAbort
-	ret
-.process_queue:
-	; if SioCount > 0: start next transfer
-	ld a, [wSioCount]
-	and a, a
-	ret z
-IF !_SIO_SHORTCUT
-	; if this device is the clock source (internal clock), do catchup delay
-	ldh a, [rSC]
-	bit SCB_SOURCE, a
-	jr z, .start_next
-		ld a, [wSioTimer]
-		and a, a
-		jr z, .start_next
-			dec a
-			ld [wSioTimer], a
-			ret
-ENDC
-.start_next:
-	; read the Tx pointer (points to the next value to send)
-	ld hl, wSioTxPtr
-	ld a, [hl+]
-	ld h, [hl]
-	ld l, a
-	; set the clock source (do this first & separately from starting the transfer!)
-	ld a, [wSioConfig]
-	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
-	ldh [rSC], a
-	; load the value to send
-	ld a, [hl]
-	ldh [rSB], a
-	; start the transfer
-	ldh a, [rSC]
-	or a, SCF_START
-	ldh [rSC], a
-
-	; reset timeout (on externally clocked device)
-	bit SCB_SOURCE, a
-	jr nz, :+
-	ld a, SIO_TIMEOUT_TICKS
-	ld [wSioTimer], a
-:
-	ld a, SIO_XFER_STARTED
-	ld [wSioState], a
 	ret
 
 
@@ -179,104 +131,96 @@ SioAbort::
 	ret
 
 
-; Complete the current transfer and read the received value. This function is
-; to be called once per (byte) transfer, after the port deactivates itself.
-; @mut: AF, HL
-SioCompleteTransfer::
-	; check that we were expecting a transfer (to end)
-	ld a, [wSioState]
-	cp a, SIO_XFER_STARTED
-	ret nz
-
-	; store the received value
-	ld hl, wSioRxPtr
-	ld a, [hl+]
-	ld h, [hl]
-	ld l, a
-	ldh a, [rSB]
-	ld [hl+], a
-	; Check if data pointer advance enabled
-	ld a, [wSioConfig]
-	and a, SIO_CONFIG_ADVANCE
-	jr z, .no_advance
-	; store the updated Rx pointer
-	ld a, l
-	ld [wSioRxPtr + 0], a
-	ld a, h
-	ld [wSioRxPtr + 1], a
-	; update the Tx pointer
-	ld hl, wSioTxPtr
-	inc [hl] ; inc low byte
-	jr nz, :+
-	; inc high byte if overflow
-	inc hl
-	inc [hl]
-:
-.no_advance:
-
-	; set state to 'completed'
-	ld a, SIO_XFER_COMPLETED
-	; update transfer count
-	ld hl, wSioCount
-	dec [hl]
-	jr nz, :+
-	; completed all, set DONE instead
-	ld a, SIO_DONE
-:
-	ld [wSioState], a
-
-	ldh a, [rSC]
-	and a, SCF_SOURCE
-IF _SIO_SHORTCUT
-	; intclk 'catchup delay'
-	jr z, :+
-	ld a, SIO_CATCHUP_SLEEP_DURATION
-	call Sleep
-:
-	jp SioTick.process_queue ; 'shortcut' to queue processing
-ELSE
-	jr z, :+
-	; reset delay timer on internal clock
-	ld a, SIO_CATCHUP_TICKS
-	ld [wSioTimer], a
-:
-	ret
-ENDC
-
-
-IF _SIO_SHORTCUT
-; | duration | T-states | M-states |
-; |----------|----------|----------|
-; |        0 |       24 |        6 |
-; |      x>0 |  x*24+32 |    x*6+8 |
-; |       20 |      512 |      128 |
-; |      127 |     3080 |      770 |
-; |      255 |     6152 |     1538 |
-; @param A: duration
-Sleep:
-	; (and + ret z + nop + nop) + (jr 0 - jr 1) + (ret) + duration * (nop + nop + dec a + jr 1)
-	; = 20 + -4 + 16 + duration * (4 + 12 + 4 + 4)
-	; = 32 + duration * 24
-	and a
-	ret z
-	nop
-	nop
-:
-	nop
-	nop
-	dec a
-	jr nz, :-
-	ret
-ENDC
-
-
-SECTION "Sio Serial Interrupt", ROM0[$58]
-; NOTE: This implementation of the serial interrupt is for demonstration purposes.
-SerialInterrupt:
-	; Use the stack to preserve the registers used by SioCompleteTransfer.
+SioInterruptHandler:
 	push af
 	push hl
-	call SioCompleteTransfer
+
+	; check that we were expecting a transfer (to end)
+	ld hl, wSioCount
+	ld a, [hl]
+	and a
+	jr z, .end
+	dec [hl]
+	; Get buffer pointer offset (low byte)
+	ld a, [wSioBufferOffset]
+	ld l, a
+	; Get received value
+	ld h, HIGH(wSioBufferRx)
+	ldh a, [rSB]
+	; NOTE: incrementing L here
+	ld [hl+], a
+	; Store updated buffer offset
+	ld a, l
+	ld [wSioBufferOffset], a
+	; If completing the last transfer, don't start another one
+	; NOTE: We are checking the zero flag as set by `dec [hl]` up above!
+	jr z, .end
+	; Next value to send
+	ld h, HIGH(wSioBufferTx)
+	ld a, [hl]
+	ldh [rSB], a
+	; If internal clock source, do catchup delay
+	ldh a, [rSC]
+	and a, SCF_SOURCE
+	; NOTE: preserve `A` to be used after the loop
+	jr z, .start_xfer
+	ld l, SIO_CATCHUP_SLEEP_DURATION
+.catchup_sleep_loop:
+	nop
+	nop
+	dec l
+	jr nz, .catchup_sleep_loop
+.start_xfer:
+	or a, SCF_START
+	ldh [rSC], a
+
+.end:
+	ld a, SIO_TIMEOUT_TICKS
+	ld [wSioTimer], a
 	pop hl
 	pop af
 	reti
+
+
+SECTION "SioPacket Impl", ROM0
+; @param C: length of payload data
+; @param DE: &payload
+; @mut: AF, C, DE, HL
+SioPacketStart::
+	; Check payload data will fit in our buffer
+	ld a, SIO_PACKET_DATA_SIZE
+	cp c
+	; TODO: panic!?
+	ret c
+
+	ld a, SIO_IDLE
+	ld [wSioState], a
+	ld a, c
+	ld [wSioCount], a
+	ld a, 0
+	ld [wSioBufferOffset], a
+
+	ld hl, wSioBufferTx
+:
+	ld a, [de] :: inc de
+	ld [hl+], a
+	dec c
+	jr nz, :-
+
+	; set the clock source (do this first & separately from starting the transfer!)
+	ld a, [wSioConfig]
+	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
+	ldh [rSC], a
+	; reset timeout
+	ld a, SIO_TIMEOUT_TICKS
+	ld [wSioTimer], a
+	; send first byte
+	ld a, [wSioBufferTx]
+	ldh [rSB], a
+	; start the transfer
+	ldh a, [rSC]
+	or a, SCF_START
+	ldh [rSC], a
+	ld a, SIO_XFER_STARTED
+	ld [wSioState], a
+	ret

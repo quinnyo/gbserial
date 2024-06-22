@@ -11,10 +11,13 @@ main::
 
 	xor a
 	ld hl, startof("wMainDisplay")
-	ld c, sizeof("wMainDisplay")
+	ld bc, sizeof("wMainDisplay")
 :
+	xor a
 	ld [hl+], a
-	dec c
+	dec bc
+	ld a, c
+	or b
 	jr nz, :-
 
 ; bg thing
@@ -100,8 +103,6 @@ def SERIAL_STATE_THING rb 1
 section "wSerialdemo", wram0
 
 wSerialState: db
-wPktGen: db
-
 _last_draw_essentials_sec: db
 
 section "serialdemo", rom0
@@ -114,7 +115,6 @@ serialdemo_init:
 	ld [wSerialState], a
 
 	xor a
-	ld [wPktGen], a
 	ld a, $FF
 	ld [_last_draw_essentials_sec], a
 
@@ -126,25 +126,25 @@ serialdemo_update:
 	call _process_input
 	call _state_update
 
-	ld a, [_last_draw_essentials_sec] :: ld b, a
-	ld a, [wSerialClock.seconds]
-	cp b
-	jr z, :+
-		ld [_last_draw_essentials_sec], a
-		xor a
-		call display_statln_start
-		push bc
-		call draw_essentials
-		pop bc
-		call display_clear_to
-:
+; 	ld a, [_last_draw_essentials_sec] :: ld b, a
+; 	ld a, [wSerialClock.seconds]
+; 	cp b
+; 	jr z, :+
+; 		ld [_last_draw_essentials_sec], a
+; 		xor a
+; 		call display_statln_start
+; 		push bc
+; 		call draw_essentials
+; 		pop bc
+; 		call display_clear_to
+; :
 
-	ld a, 1
-	call display_statln_start
-	push bc
-	call draw_statln_sc_sb
-	pop bc
-	call display_clear_to
+; 	ld a, 1
+; 	call display_statln_start
+; 	push bc
+; 	call draw_statln_sc_sb
+; 	pop bc
+; 	call display_clear_to
 
 	ld a, 2
 	call display_statln_start
@@ -172,6 +172,7 @@ _reset:
 
 _toggle_intclk:
 	call display_clear
+	call SioAbort
 	ld a, [wSioConfig]
 	xor SIO_CONFIG_INTCLK
 	ld [wSioConfig], a
@@ -204,6 +205,7 @@ DEF SIOTEST_PKT_TOTAL_LENGTH EQU SIOTEST_PKT_DATA_LENGTH + SIOTEST_PKT_HEADER_LE
 DEF SIOTEST_PKT_START EQU $77
 DEF SIOTEST_DELAY_EXT EQU 1
 DEF SIOTEST_DELAY_INT EQU 2
+DEF SIOTEST_RESULTS_COUNT EQU 16
 
 
 SECTION "SerialDemo/SioTest State", WRAM0
@@ -211,19 +213,13 @@ SECTION "SerialDemo/SioTest State", WRAM0
 wSioTestFlippy: db
 wSioTestStartDelay: db
 
-wSioTestBufferRx: ; ds SIOTEST_PKT_TOTAL_LENGTH
-	.id: db
-	.check: db
-	.data: ds SIOTEST_PKT_DATA_LENGTH
-	.end:
-wSioTestBufferTx: ; ds SIOTEST_PKT_TOTAL_LENGTH
+wSioTestBufferTx:
 	.id: db
 	.check: db
 	.data: ds SIOTEST_PKT_DATA_LENGTH
 	.end:
 
-wSioTestResults: ds 16
-	.end:
+wSioTestResults: ds SIOTEST_RESULTS_COUNT
 wSioTestResultsPtr: dw
 wSioTestResultsCount: db
 
@@ -240,13 +236,8 @@ SioTestDataB:
 SioTestInit::
 	xor a
 	ld [wSioTestFlippy], a
+	ld a, 60
 	ld [wSioTestStartDelay], a
-	ld c, wSioTestBufferRx.end - wSioTestBufferRx
-	ld hl, wSioTestBufferRx
-:
-	ld [hl+], a
-	dec c
-	jr nz, :-
 	ld c, wSioTestBufferTx.end - wSioTestBufferTx
 	ld hl, wSioTestBufferTx
 :
@@ -254,7 +245,7 @@ SioTestInit::
 	dec c
 	jr nz, :-
 	ld hl, wSioTestResults
-	ld c, wSioTestResults.end - wSioTestResults
+	ld c, SIOTEST_RESULTS_COUNT
 	ld a, "-"
 :
 	ld [hl+], a
@@ -264,7 +255,7 @@ SioTestInit::
 	ld [wSioTestResultsPtr + 0], a
 	ld a, high(wSioTestResults)
 	ld [wSioTestResultsPtr + 1], a
-	ld a, wSioTestResults.end - wSioTestResults
+	ld a, SIOTEST_RESULTS_COUNT
 	ld [wSioTestResultsCount], a
 	ret
 
@@ -278,20 +269,6 @@ SioTestUpdate::
 
 
 SioTestStartThing:
-	; set Rx pointer
-	ld de, wSioTestBufferRx
-	ld hl, wSioRxPtr
-	ld a, e
-	ld [hl+], a
-	ld [hl], d
-
-	; set Tx pointer
-	ld de, wSioTestBufferTx
-	ld hl, wSioTxPtr
-	ld a, e
-	ld [hl+], a
-	ld [hl], d
-
 	; Copy test data to packet buffer
 	ld de, SioTestDataA
 	ld a, [wSioTestFlippy]
@@ -310,12 +287,9 @@ SioTestStartThing:
 	call memcpy
 	call SioTestPacketTxFinalise
 
-	; set count and request start
-	ld a, wSioTestBufferRx.end - wSioTestBufferRx
-	ld [wSioCount], a
-	ld a, SIO_XFER_START
-	ld [wSioState], a
-	ret
+	ld de, wSioTestBufferTx
+	ld c, SIOTEST_PKT_TOTAL_LENGTH
+	jp SioPacketStart
 
 
 SioTestStartAuto:
@@ -376,13 +350,13 @@ SioTestPacketTxFinalise:
 ; @mut: AF, C, HL
 SioTestPacketRxCheck:
 	; expect constant
-	ld a, [wSioTestBufferRx.id]
+	ld a, [wSioBufferRx]
 	cp a, SIOTEST_PKT_START
 	ret nz
 
 	; check the sum
-	ld hl, wSioTestBufferRx
-	ld c, wSioTestBufferRx.end - wSioTestBufferRx
+	ld hl, wSioBufferRx
+	ld c, SIOTEST_PKT_TOTAL_LENGTH
 	call Checksum8
 	and a, a
 	ret ; F.Z already set (or not)
@@ -403,7 +377,8 @@ SioTestCheckStatus:
 	; Clear done/failed status
 	ld a, SIO_IDLE
 	ld [wSioState], a
-	jr SioTestPushResult
+	call SioTestPushResult
+	jr SioTestDrawResults
 
 
 ; @param B: result
@@ -418,7 +393,7 @@ SioTestPushResult:
 	jr nz, :+
 	; Count == 0: go to start
 	ld hl, wSioTestResults
-	ld a, wSioTestResults.end - wSioTestResults
+	ld a, SIOTEST_RESULTS_COUNT
 :
 	dec a
 	ld [wSioTestResultsCount], a
@@ -429,8 +404,7 @@ SioTestPushResult:
 	ld [wSioTestResultsPtr + 0], a
 	ld a, h
 	ld [wSioTestResultsPtr + 1], a
-
-	jr SioTestDrawResults
+	ret
 
 
 SioTestDraw:
@@ -438,23 +412,22 @@ SioTestDraw:
 	ld a, 3
 	call display_statln_start
 	push bc
+
+	ld a, [wSioBufferOffset]
+	ld b, a
 	ld a, "^rx^"
 	ld [hl+], a
 	ld a, " "
 	ld [hl+], a
 	ld a, "'"
 	ld [hl+], a
-	ld de, wSioTestBufferRx.data
+	ld de, wSioBufferRx + 2
 	ld c, SIOTEST_PKT_DATA_LENGTH
 .loop
 	; stop early if we caught up to the Rx pointer
-	ld a, [wSioRxPtr + 1]
-	cp d
-	jr nz, :+
-	ld a, [wSioRxPtr + 0]
-	cp e
-	jr z, .loop_break
-:
+	ld a, e
+	cp b
+	jr nc, .loop_break
 	ld a, [de]
 	inc de
 	ld [hl+], a
@@ -472,19 +445,22 @@ SioTestDrawResults:
 	ld a, 4
 	call display_statln_start
 	ld de, wSioTestResults
+	ld b, SIOTEST_RESULTS_COUNT
 	ld a, [wSioTestResultsCount]
 	ld c, a
-	ld a, wSioTestResults.end - wSioTestResults
+	ld a, b
 	sub c
 	ld c, a
-:
-	ld a, [de]
-	inc de
-	ld [hl+], a
-	dec c
-	jr nz, :-
+	inc c ; one after last
+.results_loop
 	ld a, " "
+	dec c
+	jr z, :+
+	ld a, [de] :: inc de
+:
 	ld [hl+], a
+	dec b
+	jr nz, .results_loop
 	ret
 
 
