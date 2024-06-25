@@ -289,7 +289,7 @@ SioTestStartThing:
 
 	ld de, wSioTestBufferTx
 	ld c, SIOTEST_PKT_TOTAL_LENGTH
-	jp SioPacketStart
+	jp SioTransferStart
 
 
 SioTestStartAuto:

@@ -39,17 +39,15 @@ DEF SIO_XFER_STARTED   RB 1
 EXPORT SIO_IDLE, SIO_FAILED, SIO_DONE
 EXPORT SIO_BUSY, SIO_XFER_STARTED
 
-DEF SIO_PACKET_BUFFER_SIZE EQU 32
-DEF SIO_PACKET_HEAD_SIZE   EQU 0
-DEF SIO_PACKET_DATA_SIZE   EQU SIO_PACKET_BUFFER_SIZE - SIO_PACKET_HEAD_SIZE
+DEF SIO_BUFFER_SIZE EQU 32
 
 
 SECTION "SioBufferRx", WRAM0, ALIGN[8]
-wSioBufferRx:: ds SIO_PACKET_BUFFER_SIZE
+wSioBufferRx:: ds SIO_BUFFER_SIZE
 
 
 SECTION "SioBufferTx", WRAM0, ALIGN[8]
-wSioBufferTx:: ds SIO_PACKET_BUFFER_SIZE
+wSioBufferTx:: ds SIO_BUFFER_SIZE
 
 
 SECTION "SioCore State", WRAM0
@@ -182,19 +180,17 @@ SioInterruptHandler:
 	reti
 
 
-SECTION "SioPacket Impl", ROM0
+; Start a multibyte serial transfer. Copies the payload.
 ; @param C: length of payload data
 ; @param DE: &payload
 ; @mut: AF, C, DE, HL
-SioPacketStart::
+SioTransferStart::
 	; Check payload data will fit in our buffer
-	ld a, SIO_PACKET_DATA_SIZE
+	ld a, SIO_BUFFER_SIZE
 	cp c
 	; TODO: panic!?
 	ret c
 
-	ld a, SIO_IDLE
-	ld [wSioState], a
 	ld a, c
 	ld [wSioCount], a
 	ld a, 0
