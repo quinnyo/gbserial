@@ -166,20 +166,7 @@ SioInterruptHandler:
 	ld h, HIGH(wSioBufferTx)
 	ld a, [hl]
 	ldh [rSB], a
-	; If internal clock source, do catchup delay
-	ldh a, [rSC]
-	and a, SCF_SOURCE
-	; NOTE: preserve `A` to be used after the loop
-	jr z, .start_xfer
-	ld l, SIO_CATCHUP_SLEEP_DURATION
-.catchup_sleep_loop:
-	nop
-	nop
-	dec l
-	jr nz, .catchup_sleep_loop
-.start_xfer:
-	or a, SCF_START
-	ldh [rSC], a
+	call SioPortStart
 
 .end:
 	ld a, SIO_TIMEOUT_TICKS
@@ -208,12 +195,28 @@ SioTransferStart::
 	; send first byte
 	ld a, [wSioBufferTx]
 	ldh [rSB], a
-	; start the transfer
-	ldh a, [rSC]
-	or a, SCF_START
-	ldh [rSC], a
+	call SioPortStart
 	ld a, SIO_XFER_STARTED
 	ld [wSioState], a
+	ret
+
+
+; @mut: AF, L
+SioPortStart:
+	; If internal clock source, do catchup delay
+	ldh a, [rSC]
+	and a, SCF_SOURCE
+	; NOTE: preserve `A` to be used after the loop
+	jr z, .start_xfer
+	ld l, SIO_CATCHUP_SLEEP_DURATION
+.catchup_sleep_loop:
+	nop
+	nop
+	dec l
+	jr nz, .catchup_sleep_loop
+.start_xfer:
+	or a, SCF_START
+	ldh [rSC], a
 	ret
 
 
