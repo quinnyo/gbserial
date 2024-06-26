@@ -244,8 +244,7 @@ SioPacketTxPrepare::
 ; @mut: AF, C, HL
 SioPacketTxFinalise::
 	ld hl, wSioBufferTx
-	ld c, SIO_BUFFER_SIZE
-	call Checksum8
+	call SioPacketChecksum
 	ld [wSioBufferTx + 1], a
 	ret
 
@@ -260,7 +259,22 @@ SioPacketRxCheck::
 	ret nz
 
 	; check the sum
-	ld c, SIO_BUFFER_SIZE
-	call Checksum8
+	call SioPacketChecksum
 	and a, a
 	ret ; F.Z already set (or not)
+
+
+; Calculate a simple 1 byte checksum of a Sio data buffer.
+; sum(buffer + sum(buffer + 0)) == 0
+; @param HL: &buffer
+; @return A: sum
+; @mut: AF, C, HL
+SioPacketChecksum:
+	ld c, SIO_BUFFER_SIZE
+	ld a, c
+:
+	sub [hl]
+	inc hl
+	dec c
+	jr nz, :-
+	ret
