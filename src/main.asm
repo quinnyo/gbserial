@@ -212,13 +212,6 @@ SECTION "SerialDemo/SioTest State", WRAM0
 
 wSioTestFlippy: db
 wSioTestStartDelay: db
-
-wSioTestBufferTx:
-	.id: db
-	.check: db
-	.data: ds SIOTEST_PKT_DATA_LENGTH
-	.end:
-
 wSioTestResults: ds SIOTEST_RESULTS_COUNT
 wSioTestResultsPtr: dw
 wSioTestResultsCount: db
@@ -238,12 +231,6 @@ SioTestInit::
 	ld [wSioTestFlippy], a
 	ld a, 60
 	ld [wSioTestStartDelay], a
-	ld c, wSioTestBufferTx.end - wSioTestBufferTx
-	ld hl, wSioTestBufferTx
-:
-	ld [hl+], a
-	dec c
-	jr nz, :-
 	ld hl, wSioTestResults
 	ld c, SIOTEST_RESULTS_COUNT
 	ld a, "-"
@@ -261,9 +248,9 @@ SioTestInit::
 
 
 SioTestUpdate::
-	call SioTestCheckStatus
-	call SioTestStartAuto
 	call SioTick
+	call SioTestFlushStatus
+	call SioTestStartAuto
 	call SioTestDraw
 	ret
 
@@ -282,13 +269,10 @@ SioTestStartThing:
 	jr nz, :+
 	ld de, SioTestDataB
 :
-	call SioTestPacketTxPrepare
+	call SioPacketTxPrepare
 	ld bc, SIOTEST_PKT_DATA_LENGTH
 	call memcpy
-	call SioTestPacketTxFinalise
-
-	ld de, wSioTestBufferTx
-	ld c, SIOTEST_PKT_TOTAL_LENGTH
+	call SioPacketTxFinalise
 	jp SioTransferStart
 
 
@@ -317,62 +301,17 @@ SioTestStartAuto:
 	jr SioTestStartThing
 
 
-; Prepare Tx packet buffer for writing.
-; @return HL: packet data pointer
-; @mut: AF, C, HL
-SioTestPacketTxPrepare:
-	ld hl, wSioTestBufferTx
-	; packet always starts with constant ID
-	ld a, SIOTEST_PKT_START
-	ld [hl+], a
-	; checksum = 0 for initial calculation
-	ld a, 0
-	ld [hl+], a
-	ld c, SIOTEST_PKT_DATA_LENGTH
-:
-	ld [hl+], a
-	dec c
-	jr nz, :-
-	ld hl, wSioTestBufferTx.data
-	ret
-
-
-; @mut: AF, C, HL
-SioTestPacketTxFinalise:
-	ld hl, wSioTestBufferTx
-	ld c, wSioTestBufferTx.end - wSioTestBufferTx
-	call Checksum8
-	ld [wSioTestBufferTx.check], a
-	ret
-
-
-; @return F.Z: if check OK
-; @mut: AF, C, HL
-SioTestPacketRxCheck:
-	; expect constant
-	ld a, [wSioBufferRx]
-	cp a, SIOTEST_PKT_START
-	ret nz
-
-	; check the sum
-	ld hl, wSioBufferRx
-	ld c, SIOTEST_PKT_TOTAL_LENGTH
-	call Checksum8
-	and a, a
-	ret ; F.Z already set (or not)
-
-
-SioTestCheckStatus:
-	ld b, "^no^"
+SioTestFlushStatus:
 	ld a, [wSioState]
+	ld b, "F"
 	cp SIO_FAILED
 	jr z, .result
 	cp SIO_DONE
-	ret nz ; no result yet
+	ret nz
+	call SioPacketRxCheck
 	ld b, "^yes^"
-	call SioTestPacketRxCheck
 	jr z, .result
-	ld b, "!"
+	ld b, "^no^"
 .result
 	; Clear done/failed status
 	ld a, SIO_IDLE

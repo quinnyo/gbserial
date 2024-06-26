@@ -42,6 +42,15 @@ EXPORT SIO_BUSY, SIO_XFER_STARTED
 DEF SIO_BUFFER_SIZE EQU 32
 
 
+; PACKET
+
+DEF SIO_PACKET_HEAD_SIZE EQU 2
+DEF SIO_PACKET_DATA_SIZE EQU SIO_BUFFER_SIZE - SIO_PACKET_HEAD_SIZE
+
+DEF SIO_PACKET_START EQU $70
+DEF SIO_PACKET_END EQU $7F
+
+
 SECTION "SioBufferRx", WRAM0, ALIGN[8]
 wSioBufferRx:: ds SIO_BUFFER_SIZE
 
@@ -180,28 +189,14 @@ SioInterruptHandler:
 	reti
 
 
-; Start a multibyte serial transfer. Copies the payload.
-; @param C: length of payload data
-; @param DE: &payload
-; @mut: AF, C, DE, HL
+; @mut: AF
 SioTransferStart::
-	; Check payload data will fit in our buffer
-	ld a, SIO_BUFFER_SIZE
-	cp c
-	; TODO: panic!?
-	ret c
+	; TODO: something if SIO_BUSY ...?
 
-	ld a, c
+	ld a, SIO_BUFFER_SIZE
 	ld [wSioCount], a
 	ld a, 0
 	ld [wSioBufferOffset], a
-
-	ld hl, wSioBufferTx
-:
-	ld a, [de] :: inc de
-	ld [hl+], a
-	dec c
-	jr nz, :-
 
 	; set the clock source (do this first & separately from starting the transfer!)
 	ld a, [wSioConfig]
@@ -220,3 +215,52 @@ SioTransferStart::
 	ld a, SIO_XFER_STARTED
 	ld [wSioState], a
 	ret
+
+
+SECTION "SioPacket Impl", ROM0
+; Initialise the Tx buffer as a packet, ready for data.
+; Returns a pointer to the packet data section.
+; @return HL: packet data pointer
+; @mut: AF, C, HL
+SioPacketTxPrepare::
+	ld hl, wSioBufferTx
+	; packet always starts with constant ID
+	ld a, SIO_PACKET_START
+	ld [hl+], a
+	; checksum = 0 for initial calculation
+	ld a, 0
+	ld [hl+], a
+	; clear packet data
+	ld a, SIO_PACKET_END
+	ld c, SIO_PACKET_DATA_SIZE
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+	ld hl, wSioBufferTx + SIO_PACKET_HEAD_SIZE
+	ret
+
+
+; @mut: AF, C, HL
+SioPacketTxFinalise::
+	ld hl, wSioBufferTx
+	ld c, SIO_BUFFER_SIZE
+	call Checksum8
+	ld [wSioBufferTx + 1], a
+	ret
+
+
+; @return F.Z: if check OK
+; @mut: AF, C, HL
+SioPacketRxCheck::
+	ld hl, wSioBufferRx
+	; expect constant
+	ld a, [hl]
+	cp a, SIO_PACKET_START
+	ret nz
+
+	; check the sum
+	ld c, SIO_BUFFER_SIZE
+	call Checksum8
+	and a, a
+	ret ; F.Z already set (or not)
