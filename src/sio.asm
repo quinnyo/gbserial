@@ -74,7 +74,12 @@ wSioTimer:: db
 
 SECTION "Sio Serial Interrupt", ROM0[$58]
 SerialInterrupt:
-	jp SioInterruptHandler
+	push af
+	push hl
+	call SioPortEnd
+	pop hl
+	pop af
+	reti
 
 
 SECTION "SioCore Impl", ROM0
@@ -138,15 +143,14 @@ SioAbort::
 	ret
 
 
-SioInterruptHandler:
-	push af
-	push hl
-
+; @mut: AF, HL
+SioPortEnd:
 	; check that we were expecting a transfer (to end)
 	ld hl, wSioCount
 	ld a, [hl]
 	and a
-	jr z, .end
+	ret z
+
 	dec [hl]
 	; Get buffer pointer offset (low byte)
 	ld a, [wSioBufferOffset]
@@ -161,19 +165,13 @@ SioInterruptHandler:
 	ld [wSioBufferOffset], a
 	; If completing the last transfer, don't start another one
 	; NOTE: We are checking the zero flag as set by `dec [hl]` up above!
-	jr z, .end
+	ret z
+
 	; Next value to send
 	ld h, HIGH(wSioBufferTx)
 	ld a, [hl]
 	ldh [rSB], a
-	call SioPortStart
-
-.end:
-	ld a, SIO_TIMEOUT_TICKS
-	ld [wSioTimer], a
-	pop hl
-	pop af
-	reti
+	jr SioPortStart
 
 
 ; Start whole buffer transfer
@@ -190,16 +188,12 @@ SioTransferStart::
 	ld a, [wSioConfig]
 	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
 	ldh [rSC], a
-	; reset timeout
-	ld a, SIO_TIMEOUT_TICKS
-	ld [wSioTimer], a
 	; send first byte
 	ld a, [wSioBufferTx]
 	ldh [rSB], a
-	call SioPortStart
 	ld a, SIO_XFER_STARTED
 	ld [wSioState], a
-	ret
+	jr SioPortStart
 
 
 ; @mut: AF, L
@@ -218,6 +212,9 @@ SioPortStart:
 .start_xfer:
 	or a, SCF_START
 	ldh [rSC], a
+	; reset timeout
+	ld a, SIO_TIMEOUT_TICKS
+	ld [wSioTimer], a
 	ret
 
 
