@@ -176,7 +176,8 @@ SioInterruptHandler:
 	reti
 
 
-; @mut: AF
+; Start whole buffer transfer
+; @mut: AF, L
 SioTransferStart::
 	; TODO: something if SIO_BUSY ...?
 
