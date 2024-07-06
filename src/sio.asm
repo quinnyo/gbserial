@@ -40,12 +40,14 @@ EXPORT SIO_IDLE, SIO_FAILED, SIO_DONE
 EXPORT SIO_BUSY, SIO_XFER_STARTED
 
 DEF SIO_BUFFER_SIZE EQU 32
+EXPORT SIO_BUFFER_SIZE
 
 
 ; PACKET
 
 DEF SIO_PACKET_HEAD_SIZE EQU 2
 DEF SIO_PACKET_DATA_SIZE EQU SIO_BUFFER_SIZE - SIO_PACKET_HEAD_SIZE
+EXPORT SIO_PACKET_HEAD_SIZE, SIO_PACKET_DATA_SIZE
 
 DEF SIO_PACKET_START EQU $70
 DEF SIO_PACKET_END EQU $7F
@@ -174,16 +176,21 @@ SioPortEnd:
 	jr SioPortStart
 
 
-; Start whole buffer transfer
+; @param A: transfer count
 ; @mut: AF, L
 SioTransferStart::
-	; TODO: something if SIO_BUSY ...?
-
-	ld a, SIO_BUFFER_SIZE
+	and a, a
+	ret z
 	ld [wSioCount], a
 	ld a, 0
 	ld [wSioBufferOffset], a
+	jr SioTransferCommit
 
+
+; Start transfer with current count and buffer position.
+; WARNING: Assumes wSioCount and wSioBufferOffset are set to valid values.
+; @mut: AF, L
+SioTransferCommit:
 	; set the clock source (do this first & separately from starting the transfer!)
 	ld a, [wSioConfig]
 	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
@@ -248,6 +255,15 @@ SioPacketTxFinalise::
 	call SioPacketChecksum
 	ld [wSioBufferTx + 1], a
 	ret
+
+
+; @mut: AF, L
+SioPacketTransferStart::
+	ld a, SIO_BUFFER_SIZE
+	ld [wSioCount], a
+	ld a, 0
+	ld [wSioBufferOffset], a
+	jp SioTransferCommit
 
 
 ; @return F.Z: if check OK

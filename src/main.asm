@@ -158,8 +158,6 @@ serialdemo_update:
 
 ; @param B: keys pressed
 _process_input:
-	bit PADB_START, b
-	jr nz, _toggle_intclk
 	ret
 
 
@@ -167,15 +165,6 @@ _reset:
 	call display_clear
 	ld a, SERIAL_STATE_INIT
 	ld [wSerialState], a
-	ret
-
-
-_toggle_intclk:
-	call display_clear
-	call SioAbort
-	ld a, [wSioConfig]
-	xor SIO_CONFIG_INTCLK
-	ld [wSioConfig], a
 	ret
 
 

@@ -43,15 +43,42 @@ SioTestInit::
 	ld [wSioTestResultsPtr + 1], a
 	ld a, SIOTEST_RESULTS_COUNT
 	ld [wSioTestResultsCount], a
+	call HandshakeInit
 	ret
 
 
 SioTestUpdate::
 	call SioTick
+	ld a, [wHandshakeState]
+	and a, a
+	jr nz, .handshake
+	jr .proper
+
+.handshake:
+	call HandshakeUpdate
+	ld a, 3
+	call display_statln_start
+	push bc
+	ld a, "H" :: ld [hl+], a
+	ld a, "S" :: ld [hl+], a
+	ld a, [wTick]
+	swap a
+	and 3
+	jr z, .dots_done
+	ld c, a
+	ld a, "."
+:
+	ld [hl+], a
+	dec c
+	jr nz, :-
+.dots_done
+	pop bc
+	jp display_clear_to
+
+.proper:
 	call SioTestFlushStatus
 	call SioTestStartAuto
-	call SioTestDraw
-	ret
+	jp SioTestDraw
 
 
 SioTestStartThing:
@@ -72,7 +99,7 @@ SioTestStartThing:
 	ld bc, SIOTEST_PKT_DATA_LENGTH
 	call memcpy
 	call SioPacketTxFinalise
-	jp SioTransferStart
+	jp SioPacketTransferStart
 
 
 SioTestStartAuto:
