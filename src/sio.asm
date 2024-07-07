@@ -24,11 +24,6 @@ DEF SIO_TIMEOUT_TICKS EQU 60
 ; Catchup delay duration
 DEF SIO_CATCHUP_SLEEP_DURATION EQU 100
 
-DEF SIO_CONFIG_INTCLK   EQU SCF_SOURCE
-DEF SIO_CONFIG_RESERVED EQU $02
-DEF SIO_CONFIG_DEFAULT  EQU $00
-EXPORT SIO_CONFIG_INTCLK
-
 ; SioStatus transfer state enum
 RSRESET
 DEF SIO_IDLE           RB 1
@@ -62,8 +57,6 @@ wSioBufferTx:: ds SIO_BUFFER_SIZE
 
 
 SECTION "SioCore State", WRAM0
-; Sio config flags
-wSioConfig:: db
 ; Sio state machine current state
 wSioState:: db
 ; Number of transfers to perform (bytes to transfer)
@@ -89,8 +82,6 @@ SECTION "SioCore Impl", ROM0
 ; NOTE: Enables the serial interrupt.
 ; @mut: AF, [IE]
 SioInit::
-	ld a, SIO_CONFIG_DEFAULT
-	ld [wSioConfig], a
 	ld a, SIO_IDLE
 	ld [wSioState], a
 	ld a, 0
@@ -161,10 +152,6 @@ SioTransferStart::
 ; WARNING: Assumes wSioCount and wSioBufferOffset are set to valid values.
 ; @mut: AF, L
 SioTransferCommit:
-	; set the clock source (do this first & separately from starting the transfer!)
-	ld a, [wSioConfig]
-	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
-	ldh [rSC], a
 	; send first byte
 	ld a, [wSioBufferTx]
 	ldh [rSB], a

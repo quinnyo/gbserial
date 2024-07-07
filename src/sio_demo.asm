@@ -89,9 +89,9 @@ SioTestStartThing:
 	cpl
 	ld [wSioTestFlippy], a
 
-	ld a, [wSioConfig]
+	ldh a, [rSC]
 	xor b
-	and SIO_CONFIG_INTCLK
+	and SCF_SOURCE
 	jr nz, :+
 	ld de, SioTestDataB
 :
@@ -117,8 +117,8 @@ SioTestStartAuto:
 .go_forth
 	; Reset delay timer
 	ld b, SIOTEST_DELAY_INT
-	ld a, [wSioConfig]
-	and SIO_CONFIG_INTCLK
+	ldh a, [rSC]
+	and SCF_SOURCE
 	jr nz, :+
 	ld b, SIOTEST_DELAY_EXT
 :

@@ -167,7 +167,7 @@ draw_sio_info:
 	; TT: timer
 	; " 1234 6789 1234 6789"
 	; "CCclk  S nNN tTT"
-	ld a, [wSioConfig]
+	ldh a, [rSC]
 	call fmt_sio_config
 	ld a, " "
 	ld [hl+], a

@@ -20,7 +20,7 @@ SECTION "Handshake Impl", ROM0
 HandshakeInit::
 	call SioAbort
 	ld a, 0
-	ld [wSioConfig], a
+	ldh [rSC], a
 	ld a, HANDSHAKE_INIT
 	ld [wHandshakeState], a
 	ld a, HANDSHAKE_PING
@@ -35,7 +35,7 @@ HandshakeInit::
 HandshakeAsClockProvider:
 	call SioAbort
 	ld a, SCF_SOURCE
-	ld [wSioConfig], a
+	ldh [rSC], a
 	ld a, HANDSHAKE_INIT
 	ld [wHandshakeState], a
 	ld a, HANDSHAKE_PONG
