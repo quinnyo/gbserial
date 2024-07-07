@@ -145,6 +145,61 @@ SioAbort::
 	ret
 
 
+; Start a transfer with a configurable length.
+; @param A: transfer count
+; @mut: AF, L
+SioTransferStart::
+	and a, a
+	ret z
+	ld [wSioCount], a
+	ld a, 0
+	ld [wSioBufferOffset], a
+	jr SioTransferCommit
+
+
+; Start transfer with current count and buffer position.
+; WARNING: Assumes wSioCount and wSioBufferOffset are set to valid values.
+; @mut: AF, L
+SioTransferCommit:
+	; set the clock source (do this first & separately from starting the transfer!)
+	ld a, [wSioConfig]
+	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
+	ldh [rSC], a
+	; send first byte
+	ld a, [wSioBufferTx]
+	ldh [rSB], a
+	ld a, SIO_XFER_STARTED
+	ld [wSioState], a
+	jr SioPortStart
+
+
+; Enable the serial port, starting a transfer.
+; If internal clock is enabled, performs catchup delay before enabling the port.
+; Resets the transfer timeout timer.
+; @mut: AF, L
+SioPortStart:
+	; If internal clock source, do catchup delay
+	ldh a, [rSC]
+	and a, SCF_SOURCE
+	; NOTE: preserve `A` to be used after the loop
+	jr z, .start_xfer
+	ld l, SIO_CATCHUP_SLEEP_DURATION
+.catchup_sleep_loop:
+	nop
+	nop
+	dec l
+	jr nz, .catchup_sleep_loop
+.start_xfer:
+	or a, SCF_START
+	ldh [rSC], a
+	; reset timeout
+	ld a, SIO_TIMEOUT_TICKS
+	ld [wSioTimer], a
+	ret
+
+
+; Collects the received value and starts the next transfer, if there is any.
+; To be called after the serial port deactivates itself / serial interrupt.
 ; @mut: AF, HL
 SioPortEnd:
 	; check that we were expecting a transfer (to end)
@@ -174,55 +229,6 @@ SioPortEnd:
 	ld a, [hl]
 	ldh [rSB], a
 	jr SioPortStart
-
-
-; @param A: transfer count
-; @mut: AF, L
-SioTransferStart::
-	and a, a
-	ret z
-	ld [wSioCount], a
-	ld a, 0
-	ld [wSioBufferOffset], a
-	jr SioTransferCommit
-
-
-; Start transfer with current count and buffer position.
-; WARNING: Assumes wSioCount and wSioBufferOffset are set to valid values.
-; @mut: AF, L
-SioTransferCommit:
-	; set the clock source (do this first & separately from starting the transfer!)
-	ld a, [wSioConfig]
-	and a, SCF_SOURCE ; the sio config byte uses the same bit for the clock source
-	ldh [rSC], a
-	; send first byte
-	ld a, [wSioBufferTx]
-	ldh [rSB], a
-	ld a, SIO_XFER_STARTED
-	ld [wSioState], a
-	jr SioPortStart
-
-
-; @mut: AF, L
-SioPortStart:
-	; If internal clock source, do catchup delay
-	ldh a, [rSC]
-	and a, SCF_SOURCE
-	; NOTE: preserve `A` to be used after the loop
-	jr z, .start_xfer
-	ld l, SIO_CATCHUP_SLEEP_DURATION
-.catchup_sleep_loop:
-	nop
-	nop
-	dec l
-	jr nz, .catchup_sleep_loop
-.start_xfer:
-	or a, SCF_START
-	ldh [rSC], a
-	; reset timeout
-	ld a, SIO_TIMEOUT_TICKS
-	ld [wSioTimer], a
-	ret
 
 
 SECTION "SioPacket Impl", ROM0
