@@ -101,17 +101,7 @@ SioInit::
 SioTick::
 	ld a, [wSioState]
 	cp a, SIO_XFER_STARTED
-	jr z, .xfer_started
-	; anything else: do nothing
-	ret
-.xfer_started:
-	ld a, [wSioCount]
-	and a, a
-	jr nz, :+
-	ld a, SIO_DONE
-	ld [wSioState], a
-	ret
-:
+	ret nz
 	; update timeout on external clock
 	ldh a, [rSC]
 	and a, SCF_SOURCE
@@ -209,8 +199,11 @@ SioPortEnd:
 	ld [wSioBufferOffset], a
 	; If completing the last transfer, don't start another one
 	; NOTE: We are checking the zero flag as set by `dec [hl]` up above!
-	ret z
-
+	jr nz, .next
+	ld a, SIO_DONE
+	ld [wSioState], a
+	ret
+.next:
 	; Next value to send
 	ld h, HIGH(wSioBufferTx)
 	ld a, [hl]
