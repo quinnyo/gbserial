@@ -80,37 +80,37 @@ fmt_sio_config::
 ; @param HL: &dest
 ; @mut: AF, BC, DE, HL
 fmt_sio_state::
-	; { i_dle, S_tarted, ^yes^_ompleted, ^no^_ailed }
 	cp SIO_IDLE
 	jr z, .idle
-	cp SIO_FAILED
-	jr z, .failed
+	cp SIO_ACTIVE
+	jr z, .active
 	cp SIO_DONE
 	jr z, .done
-	cp SIO_XFER_STARTED
-	jr z, .started
+	ld a, "^no^" :: ld [hl+], a
+	cp SIO_ABORTED
+	jr z, .aborted
+	cp SIO_TIMED_OUT
+	jr z, .timedout
 .unknown
 	ld b, a
 	jp utile_print_h8
 .idle
-	ld a, "I"
-	ld [hl+], a
+	ld a, "I" :: ld [hl+], a
 	jr .end
-.failed
-	ld a, "^no^"
-	ld [hl+], a
+.active
+	ld a, ">" :: ld [hl+], a
 	jr .end
 .done
-	ld a, "^yes^"
-	ld [hl+], a
+	ld a, "^yes^" :: ld [hl+], a
 	jr .end
-.started
-	ld a, ">"
-	ld [hl+], a
-	jr .end
+.aborted
+	ld a, "A" :: ld [hl+], a
+	ret
+.timedout
+	ld a, "T" :: ld [hl+], a
+	ret
 .end
-	ld a, " "
-	ld [hl+], a
+	ld a, " " :: ld [hl+], a
 	ret
 
 

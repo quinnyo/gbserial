@@ -24,15 +24,20 @@ DEF SIO_TIMEOUT_TICKS EQU 60
 ; Catchup delay duration
 DEF SIO_CATCHUP_SLEEP_DURATION EQU 100
 
-; SioStatus transfer state enum
-RSRESET
-DEF SIO_IDLE           RB 1
-DEF SIO_FAILED         RB 1
-DEF SIO_DONE           RB 1
-DEF SIO_BUSY           RB 0
-DEF SIO_XFER_STARTED   RB 1
-EXPORT SIO_IDLE, SIO_FAILED, SIO_DONE
-EXPORT SIO_BUSY, SIO_XFER_STARTED
+; Not doing anything, nothing to report
+DEF SIO_IDLE      EQU $00
+; A transfer is in progress
+DEF SIO_ACTIVE    EQU $80
+; Transfer completed without error
+DEF SIO_DONE      EQU $01
+; Transfer ended forcefully
+DEF SIO_ABORTED   EQU $02
+; Transfer terminated after no response time out period (external clock only)
+DEF SIO_TIMED_OUT EQU $03
+EXPORT SIO_IDLE, SIO_ACTIVE, SIO_DONE, SIO_ABORTED, SIO_TIMED_OUT
+; Mask: all result statuses
+DEF SIOF_RESULT   EQU $03
+EXPORT SIOF_RESULT
 
 DEF SIO_BUFFER_SIZE EQU 32
 EXPORT SIO_BUFFER_SIZE
@@ -100,7 +105,7 @@ SioInit::
 ; @mut: AF, HL
 SioTick::
 	ld a, [wSioState]
-	cp a, SIO_XFER_STARTED
+	cp a, SIO_ACTIVE
 	ret nz
 	; update timeout on external clock
 	ldh a, [rSC]
@@ -111,19 +116,18 @@ SioTick::
 	ret z ; timer == 0, timeout disabled
 	dec a
 	ld [wSioTimer], a
-	jr z, SioAbort
-	ret
+	ret nz
+	ld a, SIO_TIMED_OUT
+	ld [wSioState], a
+	jp SioPortStop
 
 
-; Abort the ongoing transfer (if any) and enter the FAILED state.
+; Abort the ongoing transfer (if any) and enter the ABORTED result state.
 ; @mut: AF
 SioAbort::
-	ld a, SIO_FAILED
+	ld a, SIO_ABORTED
 	ld [wSioState], a
-	ldh a, [rSC]
-	res SCB_START, a
-	ldh [rSC], a
-	ret
+	jp SioPortStop
 
 
 ; Start a transfer with a configurable length.
@@ -145,7 +149,7 @@ SioTransferCommit:
 	; send first byte
 	ld a, [wSioBufferTx]
 	ldh [rSB], a
-	ld a, SIO_XFER_STARTED
+	ld a, SIO_ACTIVE
 	ld [wSioState], a
 	jr SioPortStart
 
@@ -209,6 +213,14 @@ SioPortEnd:
 	ld a, [hl]
 	ldh [rSB], a
 	jr SioPortStart
+
+
+; @mut: AF
+SioPortStop:
+	ldh a, [rSC]
+	res SCB_START, a
+	ldh [rSC], a
+	ret
 
 
 SECTION "SioPacket Impl", ROM0

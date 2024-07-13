@@ -58,9 +58,9 @@ HandshakeUpdate::
 	ld a, [wSioState]
 	cp a, SIO_DONE
 	jr z, .TransferDone
-	; wait for active transfer
-	cp a, SIO_BUSY
-	ret nc
+	; wait for active transfer to end
+	cp a, SIO_ACTIVE
+	ret z
 	jr HandshakeInit
 
 .TransferDone:

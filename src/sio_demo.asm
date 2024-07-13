@@ -104,8 +104,8 @@ SioTestStartThing:
 
 SioTestStartAuto:
 	ld a, [wSioState]
-	cp SIO_BUSY
-	ret nc
+	cp SIO_ACTIVE
+	ret z
 
 	; tick delay timer, start thing at zero
 	ld a, [wSioTestStartDelay]
@@ -129,15 +129,23 @@ SioTestStartAuto:
 
 SioTestFlushStatus:
 	ld a, [wSioState]
-	ld b, "F"
-	cp SIO_FAILED
-	jr z, .result
+	and SIOF_RESULT
+	ret z
 	cp SIO_DONE
-	ret nz
-	call SioPacketRxCheck
-	ld b, "^yes^"
+	jr nz, :+
+		call SioPacketRxCheck
+		ld b, "^yes^"
+		jr z, .result
+		ld b, "^no^"
+		jr .result
+:
+	ld b, "A"
+	cp SIO_ABORTED
 	jr z, .result
-	ld b, "^no^"
+	ld b, "T"
+	cp SIO_TIMED_OUT
+	jr z, .result
+	ld b, "?"
 .result
 	; Clear done/failed status
 	ld a, SIO_IDLE
