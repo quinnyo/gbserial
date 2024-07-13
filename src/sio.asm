@@ -246,10 +246,7 @@ SioPacketTxFinalise::
 ; @mut: AF, L
 SioPacketTransferStart::
 	ld a, SIO_BUFFER_SIZE
-	ld [wSioCount], a
-	ld a, 0
-	ld [wSioBufferOffset], a
-	jp SioTransferCommit
+	jp SioTransferStart
 
 
 ; @return F.Z: if check OK
